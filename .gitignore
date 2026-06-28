@@ -1,0 +1,41 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode user state
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.moved-aside
+
+# Xcode build products
+DerivedData/
+.xcode-derived/
+.xcode-derived-release/
+build/
+Build/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Local app packaging output
+dist/
+
+# Bundled mihomo core is installed by scripts/install_mihomo.sh.
+Sources/ClashMeow/Resources/mihomo
+
+# Logs and local runtime files
+*.log
+*.pid
+
+# Editor state
+.idea/
+.vscode/
+*.swp
+*.swo

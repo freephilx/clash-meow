@@ -1,0 +1,484 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		5A0000012E10800100000001 /* AppResources.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0000112E10800100000001 /* AppResources.swift */; };
+		5A0000022E10800100000001 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0000122E10800100000001 /* AppState.swift */; };
+		5A0000032E10800100000001 /* ClashMeowApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0000132E10800100000001 /* ClashMeowApp.swift */; };
+		5A0000042E10800100000001 /* MihomoAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0000142E10800100000001 /* MihomoAPI.swift */; };
+		5A0000052E10800100000001 /* MihomoCoreManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0000152E10800100000001 /* MihomoCoreManager.swift */; };
+		5A0000062E10800100000001 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0000162E10800100000001 /* Models.swift */; };
+		5A0000072E10800100000001 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0000172E10800100000001 /* RootView.swift */; };
+		5A0000082E10800100000001 /* mihomo in Resources */ = {isa = PBXBuildFile; fileRef = 5A0000182E10800100000001 /* mihomo */; };
+		5A0000092E10800100000001 /* sampleConfig.yaml in Resources */ = {isa = PBXBuildFile; fileRef = 5A0000192E10800100000001 /* sampleConfig.yaml */; };
+		5A00000A2E10800100000001 /* AppInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A00001A2E10800100000001 /* AppInfo.swift */; };
+		5A00000B2E10800100000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5A00001B2E10800100000001 /* Assets.xcassets */; };
+		5A00000C2E10800100000001 /* ProfileRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A00001C2E10800100000001 /* ProfileRepository.swift */; };
+		5A00000D2E10800100000001 /* ClashMeowAppContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A00001D2E10800100000001 /* ClashMeowAppContext.swift */; };
+		5A00000E2E10800100000001 /* ClashMeowAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A00001E2E10800100000001 /* ClashMeowAppDelegate.swift */; };
+		5A00000F2E10800100000001 /* ClashMeowStatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A00001F2E10800100000001 /* ClashMeowStatusItemController.swift */; };
+		5A0000212E10800100000001 /* YAMLFileChangeMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0000222E10800100000001 /* YAMLFileChangeMonitor.swift */; };
+		5A0000232E10800100000001 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0000242E10800100000001 /* SettingsView.swift */; };
+		5A0000252E10800100000001 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0000262E10800100000001 /* AppSettings.swift */; };
+		5A0000272E10800100000001 /* PortOccupancyReleaser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0000282E10800100000001 /* PortOccupancyReleaser.swift */; };
+		5A0000292E10800100000001 /* MihomoInlineYAML.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A00002A2E10800100000001 /* MihomoInlineYAML.swift */; };
+		5A00002B2E10800100000001 /* SubscriptionDocumentNormalizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A00002C2E10800100000001 /* SubscriptionDocumentNormalizer.swift */; };
+		5A00002D2E10800100000001 /* CoreLogSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A00002E2E10800100000001 /* CoreLogSupport.swift */; };
+		5A0000362E10800100000001 /* SystemProxyController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0000342E10800100000001 /* SystemProxyController.swift */; };
+		5A0000372E10800100000001 /* MihomoYAMLSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0000352E10800100000001 /* MihomoYAMLSettings.swift */; };
+		5A0000392E10800100000001 /* TrafficSample.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0000382E10800100000001 /* TrafficSample.swift */; };
+		5A00003B2E10800100000001 /* DashboardDemoMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A00003A2E10800100000001 /* DashboardDemoMode.swift */; };
+		5A00003D2E10800100000001 /* AppDebugLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A00003C2E10800100000001 /* AppDebugLog.swift */; };
+		5A00003F2E10800100000001 /* ModeSwitchSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A00003E2E10800100000001 /* ModeSwitchSelfTest.swift */; };
+		5A0000412E10800100000001 /* HelperXPCProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0000442E10800100000001 /* HelperXPCProtocol.swift */; };
+		5A0000422E10800100000001 /* PrivilegedHelperConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0000452E10800100000001 /* PrivilegedHelperConstants.swift */; };
+		5A0000432E10800100000001 /* PrivilegedHelperManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0000462E10800100000001 /* PrivilegedHelperManager.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		5A0000102E10800100000001 /* Clash Meow.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Clash Meow.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		5A0000112E10800100000001 /* AppResources.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppResources.swift; sourceTree = "<group>"; };
+		5A0000122E10800100000001 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		5A0000132E10800100000001 /* ClashMeowApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClashMeowApp.swift; sourceTree = "<group>"; };
+		5A0000142E10800100000001 /* MihomoAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MihomoAPI.swift; sourceTree = "<group>"; };
+		5A0000152E10800100000001 /* MihomoCoreManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MihomoCoreManager.swift; sourceTree = "<group>"; };
+		5A0000162E10800100000001 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		5A0000172E10800100000001 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		5A0000182E10800100000001 /* mihomo */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; path = mihomo; sourceTree = "<group>"; };
+		5A0000192E10800100000001 /* sampleConfig.yaml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = sampleConfig.yaml; sourceTree = "<group>"; };
+		5A00001A2E10800100000001 /* AppInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppInfo.swift; sourceTree = "<group>"; };
+		5A00001B2E10800100000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		5A00001C2E10800100000001 /* ProfileRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileRepository.swift; sourceTree = "<group>"; };
+		5A00001D2E10800100000001 /* ClashMeowAppContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClashMeowAppContext.swift; sourceTree = "<group>"; };
+		5A00001E2E10800100000001 /* ClashMeowAppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClashMeowAppDelegate.swift; sourceTree = "<group>"; };
+		5A00001F2E10800100000001 /* ClashMeowStatusItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClashMeowStatusItemController.swift; sourceTree = "<group>"; };
+		5A0000222E10800100000001 /* YAMLFileChangeMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YAMLFileChangeMonitor.swift; sourceTree = "<group>"; };
+		5A0000242E10800100000001 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		5A0000262E10800100000001 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
+		5A0000282E10800100000001 /* PortOccupancyReleaser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortOccupancyReleaser.swift; sourceTree = "<group>"; };
+		5A00002A2E10800100000001 /* MihomoInlineYAML.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MihomoInlineYAML.swift; sourceTree = "<group>"; };
+		5A00002C2E10800100000001 /* SubscriptionDocumentNormalizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionDocumentNormalizer.swift; sourceTree = "<group>"; };
+		5A00002E2E10800100000001 /* CoreLogSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreLogSupport.swift; sourceTree = "<group>"; };
+		5A0000342E10800100000001 /* SystemProxyController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemProxyController.swift; sourceTree = "<group>"; };
+		5A0000352E10800100000001 /* MihomoYAMLSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MihomoYAMLSettings.swift; sourceTree = "<group>"; };
+		5A0000382E10800100000001 /* TrafficSample.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrafficSample.swift; sourceTree = "<group>"; };
+		5A00003A2E10800100000001 /* DashboardDemoMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardDemoMode.swift; sourceTree = "<group>"; };
+		5A00003C2E10800100000001 /* AppDebugLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDebugLog.swift; sourceTree = "<group>"; };
+		5A00003E2E10800100000001 /* ModeSwitchSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeSwitchSelfTest.swift; sourceTree = "<group>"; };
+		5A0000442E10800100000001 /* HelperXPCProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperXPCProtocol.swift; sourceTree = "<group>"; };
+		5A0000452E10800100000001 /* PrivilegedHelperConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivilegedHelperConstants.swift; sourceTree = "<group>"; };
+		5A0000462E10800100000001 /* PrivilegedHelperManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivilegedHelperManager.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		5A0000202E10800100000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		5A0000302E10800100000001 = {
+			isa = PBXGroup;
+			children = (
+				5A0000312E10800100000001 /* Sources/ClashMeow */,
+				5A0000322E10800100000001 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		5A0000312E10800100000001 /* Sources/ClashMeow */ = {
+			isa = PBXGroup;
+			children = (
+				5A0000442E10800100000001 /* HelperXPCProtocol.swift */,
+				5A0000452E10800100000001 /* PrivilegedHelperConstants.swift */,
+				5A0000462E10800100000001 /* PrivilegedHelperManager.swift */,
+				5A0000112E10800100000001 /* AppResources.swift */,
+				5A00001A2E10800100000001 /* AppInfo.swift */,
+				5A0000122E10800100000001 /* AppState.swift */,
+				5A00001D2E10800100000001 /* ClashMeowAppContext.swift */,
+				5A00001E2E10800100000001 /* ClashMeowAppDelegate.swift */,
+				5A00001F2E10800100000001 /* ClashMeowStatusItemController.swift */,
+				5A0000132E10800100000001 /* ClashMeowApp.swift */,
+				5A0000142E10800100000001 /* MihomoAPI.swift */,
+				5A0000152E10800100000001 /* MihomoCoreManager.swift */,
+				5A0000162E10800100000001 /* Models.swift */,
+				5A00001C2E10800100000001 /* ProfileRepository.swift */,
+				5A0000172E10800100000001 /* RootView.swift */,
+				5A0000222E10800100000001 /* YAMLFileChangeMonitor.swift */,
+				5A0000242E10800100000001 /* SettingsView.swift */,
+				5A0000262E10800100000001 /* AppSettings.swift */,
+				5A0000282E10800100000001 /* PortOccupancyReleaser.swift */,
+				5A00002A2E10800100000001 /* MihomoInlineYAML.swift */,
+				5A00002C2E10800100000001 /* SubscriptionDocumentNormalizer.swift */,
+				5A00002E2E10800100000001 /* CoreLogSupport.swift */,
+				5A0000342E10800100000001 /* SystemProxyController.swift */,
+				5A0000352E10800100000001 /* MihomoYAMLSettings.swift */,
+				5A0000382E10800100000001 /* TrafficSample.swift */,
+				5A00003A2E10800100000001 /* DashboardDemoMode.swift */,
+				5A00003C2E10800100000001 /* AppDebugLog.swift */,
+				5A00003E2E10800100000001 /* ModeSwitchSelfTest.swift */,
+				5A0000332E10800100000001 /* Resources */,
+			);
+			path = Sources/ClashMeow;
+			sourceTree = "<group>";
+		};
+		5A0000322E10800100000001 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				5A0000102E10800100000001 /* Clash Meow.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		5A0000332E10800100000001 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				5A0000182E10800100000001 /* mihomo */,
+				5A0000192E10800100000001 /* sampleConfig.yaml */,
+				5A00001B2E10800100000001 /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		5A0000402E10800100000001 /* ClashMeow */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5A0000902E10800100000001 /* Build configuration list for PBXNativeTarget "ClashMeow" */;
+			buildPhases = (
+				5A0000502E10800100000001 /* Sources */,
+				5A0000202E10800100000001 /* Frameworks */,
+				5A0000602E10800100000001 /* Resources */,
+				5A0000472E10800100000001 /* Build Privileged Helper */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ClashMeow;
+			productName = ClashMeow;
+			productReference = 5A0000102E10800100000001 /* Clash Meow.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		5A0000702E10800100000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					5A0000402E10800100000001 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+				};
+			};
+			buildConfigurationList = 5A0000802E10800100000001 /* Build configuration list for PBXProject "ClashMeow" */;
+			developmentRegion = zh_CN;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				zh_CN,
+				en,
+				Base,
+			);
+			mainGroup = 5A0000302E10800100000001;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 5A0000322E10800100000001 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				5A0000402E10800100000001 /* ClashMeow */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		5A0000602E10800100000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5A0000082E10800100000001 /* mihomo in Resources */,
+				5A0000092E10800100000001 /* sampleConfig.yaml in Resources */,
+				5A00000B2E10800100000001 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		5A0000472E10800100000001 /* Build Privileged Helper */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/scripts/build_privileged_helper.sh",
+				"$(SRCROOT)/ClashMeowHelper/Info.plist",
+				"$(SRCROOT)/ClashMeowHelper/com.clash.meow.helper.plist",
+				"$(SRCROOT)/ClashMeowHelper/HelperService.swift",
+				"$(SRCROOT)/ClashMeowHelper/main.swift",
+				"$(SRCROOT)/Sources/ClashMeow/HelperXPCProtocol.swift",
+				"$(SRCROOT)/Sources/ClashMeow/PrivilegedHelperConstants.swift",
+			);
+			name = "Build Privileged Helper";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/$(FULL_PRODUCT_NAME)/Contents/Library/LaunchServices/com.clash.meow.helper",
+				"$(BUILT_PRODUCTS_DIR)/$(FULL_PRODUCT_NAME)/Contents/Library/LaunchDaemons/com.clash.meow.helper.plist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "\"${SRCROOT}/scripts/build_privileged_helper.sh\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		5A0000502E10800100000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5A0000412E10800100000001 /* HelperXPCProtocol.swift in Sources */,
+				5A0000422E10800100000001 /* PrivilegedHelperConstants.swift in Sources */,
+				5A0000432E10800100000001 /* PrivilegedHelperManager.swift in Sources */,
+				5A0000012E10800100000001 /* AppResources.swift in Sources */,
+				5A00000A2E10800100000001 /* AppInfo.swift in Sources */,
+				5A0000022E10800100000001 /* AppState.swift in Sources */,
+				5A00000D2E10800100000001 /* ClashMeowAppContext.swift in Sources */,
+				5A00000E2E10800100000001 /* ClashMeowAppDelegate.swift in Sources */,
+				5A00000F2E10800100000001 /* ClashMeowStatusItemController.swift in Sources */,
+				5A0000032E10800100000001 /* ClashMeowApp.swift in Sources */,
+				5A0000042E10800100000001 /* MihomoAPI.swift in Sources */,
+				5A0000052E10800100000001 /* MihomoCoreManager.swift in Sources */,
+				5A0000062E10800100000001 /* Models.swift in Sources */,
+				5A00000C2E10800100000001 /* ProfileRepository.swift in Sources */,
+				5A0000072E10800100000001 /* RootView.swift in Sources */,
+				5A0000212E10800100000001 /* YAMLFileChangeMonitor.swift in Sources */,
+				5A0000232E10800100000001 /* SettingsView.swift in Sources */,
+				5A0000252E10800100000001 /* AppSettings.swift in Sources */,
+				5A0000272E10800100000001 /* PortOccupancyReleaser.swift in Sources */,
+				5A0000292E10800100000001 /* MihomoInlineYAML.swift in Sources */,
+				5A00002B2E10800100000001 /* SubscriptionDocumentNormalizer.swift in Sources */,
+				5A00002D2E10800100000001 /* CoreLogSupport.swift in Sources */,
+				5A0000362E10800100000001 /* SystemProxyController.swift in Sources */,
+				5A0000372E10800100000001 /* MihomoYAMLSettings.swift in Sources */,
+				5A0000392E10800100000001 /* TrafficSample.swift in Sources */,
+				5A00003B2E10800100000001 /* DashboardDemoMode.swift in Sources */,
+				5A00003D2E10800100000001 /* AppDebugLog.swift in Sources */,
+				5A00003F2E10800100000001 /* ModeSwitchSelfTest.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		5A0000812E10800100000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		5A0000822E10800100000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		5A0000912E10800100000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Clash Meow";
+				INFOPLIST_KEY_CFBundleName = "Clash Meow";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSHighResolutionCapable = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.clash.meow;
+				PRODUCT_NAME = "Clash Meow";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		5A0000922E10800100000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Clash Meow";
+				INFOPLIST_KEY_CFBundleName = "Clash Meow";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSHighResolutionCapable = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.clash.meow;
+				PRODUCT_NAME = "Clash Meow";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		5A0000802E10800100000001 /* Build configuration list for PBXProject "ClashMeow" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5A0000812E10800100000001 /* Debug */,
+				5A0000822E10800100000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		5A0000902E10800100000001 /* Build configuration list for PBXNativeTarget "ClashMeow" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5A0000912E10800100000001 /* Debug */,
+				5A0000922E10800100000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 5A0000702E10800100000001 /* Project object */;
+}

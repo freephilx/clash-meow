@@ -1,0 +1,23 @@
+# ClashMeow writes this starter config to ~/.config/clash-meow/config.yaml.
+# Safe defaults aligned with Kumo: direct-only profile, no TUN/DNS until configured.
+# Replace proxies and proxy-groups with your subscription or import a profile.
+
+mixed-port: 7890
+allow-lan: false
+mode: rule
+log-level: info
+ipv6: false
+find-process-mode: always
+external-controller: 127.0.0.1:9090
+secret: ""
+
+proxies: []
+
+proxy-groups:
+  - name: Proxy
+    type: select
+    proxies:
+      - DIRECT
+
+rules:
+  - MATCH,DIRECT
