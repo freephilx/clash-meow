@@ -22,6 +22,22 @@ Clash Meow 是一个原生 macOS 图形应用，用于运行、管理和观察�
 
 [开发文档](docs/development.md)
 
+设计调研与实现取舍见：
+
+- [切换配置方案](docs/切换配置.md)
+- [日志方案](docs/日志.md)
+
+## 参考与致谢
+
+Clash Meow 的部分产品行为、配置管理、日志处理和 macOS 集成方案参考并对照了以下开源项目：
+
+- [mihomo](https://github.com/MetaCubeX/mihomo)：本项目运行和管理的代理内核。
+- [ClashX.Meta](https://github.com/MetaCubeX/ClashX.Meta)：参考其 macOS 菜单栏、配置切换、系统代理和 privileged helper 相关设计。
+- [Kumo](https://github.com/ProjectKumo/KumoApp)：参考其 Profile、受控运行时配置、日志和 core lifecycle 分层思路。
+- [Clash Party / Mihomo Party](https://github.com/mihomo-party-org/clash-party)：参考其 Profile 切换、运行时配置生成、热重载和失败回滚策略。
+
+上述项目的版权和许可证归各自项目所有。本文档中的“参考”指设计调研、行为对照和实现取舍依据；除非另有说明，本仓库不声明复制或再分发这些项目的源代码。
+
 ## 免责声明
 - 本项目代码 100% 由 AI Agent 参与生成与修改完成。
 - 本项目按“现状（AS IS）”提供，不提供任何形式的明示或默示担保。

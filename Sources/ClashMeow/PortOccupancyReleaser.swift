@@ -37,24 +37,35 @@ enum PortOccupancyReleaser {
         let validPorts = ports.filter { (1...65535).contains($0) }
         guard !validPorts.isEmpty else { return }
         debugLog("准备使用管理员权限释放端口: \(portListDescription(validPorts))")
+        var occupiedPorts = Set<Int>()
         for port in validPorts.sorted() {
             let pids = listeningPIDs(on: port, excluding: excludingPID)
             if pids.isEmpty {
                 debugLog("端口 \(port) 未被占用")
             } else {
-                debugLog("端口 \(port) 被占用，PIDs=\(pidListDescription(pids))，将请求特权助手 kill")
+                debugLog("端口 \(port) 被占用，PIDs=\(pidListDescription(pids))，尝试普通权限终止")
+                terminate(pids: pids)
+                usleep(150_000)
+                let remainingPIDs = listeningPIDs(on: port, excluding: excludingPID)
+                if remainingPIDs.isEmpty {
+                    debugLog("端口 \(port) 普通权限释放成功")
+                } else {
+                    debugLog("端口 \(port) 普通权限释放失败，剩余 PIDs=\(pidListDescription(remainingPIDs))，将请求特权助手 kill")
+                    occupiedPorts.insert(port)
+                }
             }
         }
-        if releaseWithPrivilegedHelper(ports: validPorts, excludingPID: excludingPID) {
+        guard !occupiedPorts.isEmpty else { return }
+        if releaseWithPrivilegedHelper(ports: occupiedPorts, excludingPID: excludingPID) {
             debugLog("特权助手释放端口完成")
         } else if PrivilegedHelperManager.shared.canInstallBundledHelper {
             debugLog("特权助手释放失败，跳过 AppleScript 回退，避免重复管理员密码弹窗")
         } else {
             debugLog("特权助手不可用，回退到 AppleScript 管理员授权")
-            releaseWithAdministratorPrivileges(ports: validPorts, excludingPID: excludingPID)
+            releaseWithAdministratorPrivileges(ports: occupiedPorts, excludingPID: excludingPID)
         }
         usleep(150_000)
-        for port in validPorts.sorted() {
+        for port in occupiedPorts.sorted() {
             let pids = listeningPIDs(on: port, excluding: excludingPID)
             if pids.isEmpty {
                 debugLog("端口 \(port) 管理员权限释放后未占用")

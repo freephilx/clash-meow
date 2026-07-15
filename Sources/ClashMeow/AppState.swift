@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Combine
 
@@ -6,12 +7,25 @@ struct AppToast: Identifiable, Equatable {
     let message: String
 }
 
+private enum TunUpdateError: LocalizedError {
+    case coreRestartFailed(CoreStatus)
+    case coreRestartTimedOut
+    case runtimeTunMismatch(expected: Bool, actual: Bool?)
+
+    var errorDescription: String? {
+        switch self {
+        case .coreRestartFailed(let status):
+            "增强模式需要 mihomo 正常启动，当前状态：\(status.title)"
+        case .coreRestartTimedOut:
+            "增强模式需要 mihomo 正常启动，但等待启动超时。"
+        case .runtimeTunMismatch(let expected, let actual):
+            "增强模式运行状态校验失败，期望：\(expected)，实际：\(actual.map(String.init) ?? "nil")。"
+        }
+    }
+}
+
 @MainActor
 final class AppState: ObservableObject {
-    private static let forwardingModeKey = "mihomo.forwardingMode"
-    private static let allowLanKey = "mihomo.allowLan"
-    private static let systemProxyNetworkServiceKey = "mihomo.systemProxyNetworkService"
-
     @Published var core = MihomoCoreManager()
     @Published var config: MihomoConfig?
     @Published var version: MihomoVersion?
@@ -20,16 +34,21 @@ final class AppState: ObservableObject {
     @Published var connections = ConnectionsSnapshot(downloadTotal: 0, uploadTotal: 0, connections: [])
     @Published var proxyGroups: [ProxyGroupItem] = []
     @Published var rules: [RuleItem] = []
+    @Published var ruleProviders: [RuleProviderItem] = []
     @Published var logs: [CoreLogEntry] = []
     @Published var isStreamingLogs = false
+    @Published private(set) var updatingRuleProviderNames = Set<String>()
     @Published private(set) var testingDelayGroupID: String?
     @Published var activeProfileConfig: MihomoConfig?
     @Published var activeProfileProxyGroups: [ProxyGroupItem] = []
     @Published var activeProfileNodes: [ProxyNodeInfo] = []
     @Published var proxyNodeStatuses: [String: ProxyNodeRuntimeStatus] = [:]
+    @Published var internetLatencySnapshot = InternetLatencySnapshot.empty
+    @Published private(set) var isDiagnosingInternetLatency = false
     @Published var profiles: [ClashMeowProfileSummary] = []
     @Published var toast: AppToast?
     @Published var isImportingProfile = false
+    @Published private(set) var isApplyingTunUpdate = false
     @Published var refreshingProfileIDs = Set<String>()
     @Published var forwardingMode: MihomoMode
     @Published var allowLan: Bool
@@ -52,12 +71,18 @@ final class AppState: ObservableObject {
     private var tunUpdateTask: Task<Void, Never>?
     private var toastDismissTask: Task<Void, Never>?
     private var trafficStreamTask: Task<Void, Never>?
+    private var coreStartupTask: Task<Void, Never>?
     private var configReloadTask: Task<Void, Never>?
     private var activeConfigFileMonitor: YAMLFileChangeMonitor?
     private var activeProfileFileMonitor: YAMLFileChangeMonitor?
     private var suppressFileChangeNotificationsUntil: Date?
+    private var isApplyingObservedConfigurationChange = false
+    private var pendingObservedConfigurationChange: ObservedConfigFile?
     private var suppressModeDriftSync = false
     private var cancellables = Set<AnyCancellable>()
+    #if DEBUG
+    private var tunRestartForTesting: (() async throws -> Void)?
+    #endif
 
     var isTestingDelay: Bool {
         testingDelayGroupID != nil
@@ -77,18 +102,19 @@ final class AppState: ObservableObject {
     }
 
     init() {
-        let savedMode = UserDefaults.standard.string(forKey: Self.forwardingModeKey)
+        let savedMode = AppPreferenceStore.string(\.forwardingMode)
         self.forwardingMode = MihomoMode(rawValue: savedMode ?? "") ?? .rule
-        self.allowLan = UserDefaults.standard.object(forKey: Self.allowLanKey) as? Bool ?? false
+        self.allowLan = AppPreferenceStore.bool(\.allowLan, default: false)
         let savedSystemProxy = SystemProxyPreference.isEnabled
         let savedTun = TunPreference.isEnabled
-        self.systemProxyEnabled = savedSystemProxy
         self.toggles = [
             .init(id: "dns", title: "DNS", subtitle: "DNS 解析与 nameserver 配置状态。", systemImage: "network", isOn: true),
             .init(id: "allowLan", title: "允许局域网访问", subtitle: "允许局域网设备连接本机混合端口。", systemImage: "rectangle.connected.to.line.below", isOn: self.allowLan),
             .init(id: "proxy", title: "系统代理", subtitle: "将系统网络设置指向本机混合端口。", systemImage: "globe", isOn: savedSystemProxy),
             .init(id: "tun", title: "TUN", subtitle: "系统栈、自动路由与虚拟网卡。", systemImage: "antenna.radiowaves.left.and.right", isOn: savedTun)
         ]
+
+        AppLogSupport.info("AppState 初始化完成", module: "App", logsDirectory: core.logsDirectory)
 
         core.objectWillChange
             .sink { [weak self] _ in
@@ -127,16 +153,11 @@ final class AppState: ObservableObject {
         case .direct:
             return []
         case .global:
-            return Self.proxyGroupsWithGlobalFirst(
+            return Self.moveGlobalProxyGroupFirst(Self.proxyGroupsWithGlobalFirst(
                 groups: groups,
                 profileNodes: activeProfileNodes,
                 statuses: proxyNodeStatuses
-            )
-            .sorted { lhs, rhs in
-                if Self.isGlobalProxyGroup(lhs) { return true }
-                if Self.isGlobalProxyGroup(rhs) { return false }
-                return false
-            }
+            ))
         case .rule:
             return groups.filter { !Self.isGlobalProxyGroup($0) }
         }
@@ -164,11 +185,11 @@ final class AppState: ObservableObject {
     private var runtimeProxyGroupsForCurrentMode: [ProxyGroupItem] {
         let groups = proxyGroups.isEmpty ? activeProfileProxyGroups : proxyGroups
         if effectiveForwardingMode == .global {
-            return Self.proxyGroupsWithGlobalFirst(
+            return Self.moveGlobalProxyGroupFirst(Self.proxyGroupsWithGlobalFirst(
                 groups: groups,
                 profileNodes: activeProfileNodes,
                 statuses: proxyNodeStatuses
-            )
+            ))
         }
         return groups
     }
@@ -176,6 +197,16 @@ final class AppState: ObservableObject {
     private static func isGlobalProxyGroup(_ group: ProxyGroupItem) -> Bool {
         group.id.caseInsensitiveCompare("GLOBAL") == .orderedSame
             || group.name.caseInsensitiveCompare("GLOBAL") == .orderedSame
+    }
+
+    private static func moveGlobalProxyGroupFirst(_ groups: [ProxyGroupItem]) -> [ProxyGroupItem] {
+        guard let index = groups.firstIndex(where: { isGlobalProxyGroup($0) }), index > 0 else {
+            return groups
+        }
+        var reordered = groups
+        let global = reordered.remove(at: index)
+        reordered.insert(global, at: 0)
+        return reordered
     }
 
     static func proxyGroupsWithGlobalFirst(
@@ -300,6 +331,12 @@ final class AppState: ObservableObject {
         self.api = api
     }
 
+    #if DEBUG
+    internal func setTunRestartForTesting(_ restart: (() async throws -> Void)?) {
+        tunRestartForTesting = restart
+    }
+    #endif
+
     var currentProfile: ClashMeowProfileSummary? {
         profiles.first(where: \.isCurrent)
     }
@@ -377,6 +414,18 @@ final class AppState: ObservableObject {
         return "--"
     }
 
+    var activityInternetLatencyText: String {
+        internetLatencySnapshot.internetText
+    }
+
+    var activityRouterLatencyText: String {
+        internetLatencySnapshot.routerText
+    }
+
+    var activityDNSLatencyText: String {
+        internetLatencySnapshot.dnsText
+    }
+
     var activityCumulativeTrafficTotal: Int {
         let streamed = traffic.upTotal + traffic.downTotal
         if streamed > 0 { return streamed }
@@ -423,13 +472,11 @@ final class AppState: ObservableObject {
             return
         }
 
-        #if DEBUG
-        if DebugMockOverviewPreference.isEnabled {
-            enableDebugMockOverviewYAMLProfile()
+        guard ensureRequiredHelperInstalledForStartup() else {
             return
         }
-        #endif
 
+        restoreSelectedProfileIfNeeded()
         refreshProfiles()
         loadActiveProfileSnapshot()
         startConfigurationFileMonitoring()
@@ -437,75 +484,38 @@ final class AppState: ObservableObject {
 
         if CoreAutoStartManager.isEnabled {
             connect(recordPreference: false)
-            try? await Task.sleep(for: .milliseconds(800))
+        } else {
+            await applySavedNetworkPreferences()
+        }
+    }
+
+    private func ensureRequiredHelperInstalledForStartup() -> Bool {
+        guard PrivilegedHelperManager.shared.canInstallBundledHelper else {
+            AppLogSupport.warning("当前运行环境不是 app bundle，跳过启动 helper 前置校验", module: "Helper", logsDirectory: core.logsDirectory)
+            return true
         }
 
-        if core.status.isHealthy {
-            await refresh()
+        do {
+            AppLogSupport.info("启动前校验 privileged helper", module: "Helper", logsDirectory: core.logsDirectory)
+            try PrivilegedHelperManager.shared.ensureInstalledForApplicationStartup()
+            addEvent(source: "Helper", title: "管理员助手已就绪", detail: "已安装并通过版本校验。")
+            return true
+        } catch {
+            AppLogSupport.error("启动前 helper 校验失败: \(error.localizedDescription)", module: "Helper", logsDirectory: core.logsDirectory)
+            addEvent(source: "Helper", title: "管理员助手未就绪", detail: error.localizedDescription)
+            showToast("需要安装管理员助手")
+            return false
         }
-        await applySavedNetworkPreferences()
     }
 
     func applyDashboardDemo() {
-        DashboardDemoData.apply(to: self)
+        DashboardDemoData.apply(to: self, coreEnabled: CoreAutoStartManager.isEnabled)
         addEvent(source: "Core", title: core.status.title, detail: coreSubtitle)
     }
 
     func setDemoPresentationFlags(systemProxyEnabled: Bool) {
         self.systemProxyEnabled = systemProxyEnabled
     }
-
-    #if DEBUG
-    func setDebugMockOverviewYAMLProfileEnabled(_ isEnabled: Bool) {
-        DebugMockOverviewPreference.setEnabled(isEnabled)
-        if isEnabled {
-            enableDebugMockOverviewYAMLProfile()
-        } else {
-            disableDebugMockOverviewYAMLProfile()
-        }
-    }
-
-    private func enableDebugMockOverviewYAMLProfile() {
-        do {
-            suppressFileChangeNotifications()
-            let summary = try profileRepository.upsertDebugMockProfile(
-                id: DashboardDemoData.mockProfileID,
-                name: DashboardDemoData.mockProfileName,
-                yaml: DashboardDemoData.mockProfileYAML,
-                subscriptionUserInfo: DashboardDemoData.mockSubscriptionUserInfo
-            )
-            refreshProfiles()
-            updateActiveProfileFileMonitor()
-            loadActiveProfileSnapshot(resetRuntimeData: true)
-            applyDashboardDemo()
-            refreshProfiles()
-            addEvent(source: "Debug", title: "Mock YAML 已启用", detail: summary.name)
-            showToast("已启用 Mock 概览 YAML")
-        } catch {
-            DebugMockOverviewPreference.setEnabled(false)
-            showToast(error.localizedDescription)
-        }
-    }
-
-    private func disableDebugMockOverviewYAMLProfile() {
-        do {
-            suppressFileChangeNotifications()
-            if profiles.contains(where: { $0.id == DashboardDemoData.mockProfileID }) {
-                _ = try profileRepository.deleteProfile(id: DashboardDemoData.mockProfileID)
-            } else {
-                _ = try? profileRepository.deleteProfile(id: DashboardDemoData.mockProfileID)
-            }
-            core.clearDemoPresentation()
-            refreshProfiles()
-            updateActiveProfileFileMonitor()
-            loadActiveProfileSnapshot(resetRuntimeData: true)
-            addEvent(source: "Debug", title: "Mock YAML 已关闭", detail: currentProfileName)
-            showToast("已关闭 Mock 概览 YAML")
-        } catch {
-            showToast(error.localizedDescription)
-        }
-    }
-    #endif
 
     func connect(recordPreference: Bool = true) {
         guard !DashboardDemoMode.isEnabled else { return }
@@ -515,20 +525,18 @@ final class AppState: ObservableObject {
             CoreAutoStartManager.setEnabled(true)
         }
         addEvent(source: "Core", title: "启动内核", detail: "使用 \(currentProfileName) 作为配置文件。")
-        syncTrafficStream()
-        if SystemProxyPreference.isEnabled {
-            setSystemProxyEnabled(true, recordPreference: false)
-        }
+        schedulePostCoreStartupRestore()
     }
 
     func disconnect(recordPreference: Bool = true) {
         guard !DashboardDemoMode.isEnabled else { return }
+        coreStartupTask?.cancel()
+        coreStartupTask = nil
         if systemProxyEnabled {
-            systemProxyUpdateTask?.cancel()
-            systemProxyUpdateTask = Task { [weak self] in
-                try? await self?.applySystemProxy(false)
-            }
-            systemProxyEnabled = false
+            setSystemProxyEnabled(false, recordPreference: false)
+        }
+        if isTunEnabled {
+            setTunEnabled(false, recordPreference: false, restartIfNeeded: false)
         }
         stopTrafficStream()
         stopPolling()
@@ -537,6 +545,49 @@ final class AppState: ObservableObject {
             CoreAutoStartManager.setEnabled(false)
         }
         addEvent(source: "Core", title: "停止内核", detail: "本地内核进程已停止。")
+    }
+
+    private func schedulePostCoreStartupRestore() {
+        coreStartupTask?.cancel()
+        coreStartupTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await waitForControllerReadyAfterCoreStart()
+                guard !Task.isCancelled, core.status.isHealthy else { return }
+                await refresh()
+                if SystemProxyUserPreference.isEnabled {
+                    setSystemProxyEnabled(true, recordPreference: false)
+                }
+                if TunUserPreference.isEnabled {
+                    setTunEnabled(true, recordPreference: false)
+                } else {
+                    await applySavedNetworkPreferences()
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                addEvent(source: "Core", title: "Controller 暂不可用", detail: error.localizedDescription)
+            }
+        }
+    }
+
+    private func waitForControllerReadyAfterCoreStart(timeout: TimeInterval = 12) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        var lastError: Error?
+        while Date() < deadline {
+            try Task.checkCancellation()
+            guard core.status.isHealthy else {
+                try await Task.sleep(for: .milliseconds(150))
+                continue
+            }
+            do {
+                _ = try await api.version()
+                return
+            } catch {
+                lastError = error
+                try await Task.sleep(for: .milliseconds(150))
+            }
+        }
+        throw lastError ?? URLError(.timedOut)
     }
 
     func shutdown() {
@@ -555,6 +606,8 @@ final class AppState: ObservableObject {
         toastDismissTask = nil
         configReloadTask?.cancel()
         configReloadTask = nil
+        isApplyingObservedConfigurationChange = false
+        pendingObservedConfigurationChange = nil
         activeConfigFileMonitor?.stop()
         activeConfigFileMonitor = nil
         activeProfileFileMonitor?.stop()
@@ -586,6 +639,7 @@ final class AppState: ObservableObject {
             async let connections = api.connections()
             async let proxies = api.proxies()
             async let rules = api.rules()
+            async let ruleProviders = api.ruleProviders()
             self.version = try await version
             self.config = try await config
             updateAPIEndpoint(from: self.config)
@@ -599,9 +653,13 @@ final class AppState: ObservableObject {
             )
             self.proxyGroups = Self.makeProxyGroups(
                 from: proxiesResponse,
+                configuredGroups: self.activeProfileProxyGroups,
                 delayOverrides: self.proxyNodeStatuses
             )
-            self.rules = (try? await rules) ?? self.rules
+            if let fetchedRules = try? await rules {
+                self.rules = fetchedRules
+            }
+            self.ruleProviders = (try? await ruleProviders) ?? self.ruleProviders
             syncTrafficStream()
             await applySavedModeIfNeeded()
             await applySavedAllowLanIfNeeded()
@@ -611,9 +669,108 @@ final class AppState: ObservableObject {
         }
     }
 
+    func refreshProxyGroupsFromControllerIfAvailable() async {
+        do {
+            async let config = api.configs()
+            async let proxies = api.proxies()
+            self.config = try await config
+            updateAPIEndpoint(from: self.config)
+            let proxiesResponse = try await proxies
+            let fetchedStatuses = Self.makeProxyNodeStatuses(from: proxiesResponse)
+            self.proxyNodeStatuses = Self.mergedProxyNodeStatuses(
+                existing: self.proxyNodeStatuses,
+                fetched: fetchedStatuses
+            )
+            self.proxyGroups = Self.makeProxyGroups(
+                from: proxiesResponse,
+                configuredGroups: self.activeProfileProxyGroups,
+                delayOverrides: self.proxyNodeStatuses
+            )
+        } catch {
+            addEvent(source: "Proxy", title: "代理组刷新失败", detail: error.localizedDescription)
+        }
+    }
+
+    func diagnoseInternetLatencyIfNeeded() async {
+        guard internetLatencySnapshot.measuredAt == nil else { return }
+        await diagnoseInternetLatency()
+    }
+
+    func diagnoseInternetLatency() async {
+        guard !isDiagnosingInternetLatency else { return }
+
+        isDiagnosingInternetLatency = true
+        defer { isDiagnosingInternetLatency = false }
+
+        let configuration = InternetLatencyPreference.configuration
+        var snapshot = await Task.detached(priority: .utility) {
+            await InternetLatencyDiagnostics.measure(configuration: configuration)
+        }.value
+        let proxyEntry = await proxyChainDiagnosticEntry(configuration: configuration)
+        snapshot.entries.append(proxyEntry)
+        internetLatencySnapshot = snapshot
+
+        let values = [
+            "公网 \(snapshot.internetText)",
+            "路由器 \(snapshot.routerText)",
+            "DNS \(snapshot.dnsText)"
+        ].joined(separator: " · ")
+        addEvent(source: "Network", title: "互联网延迟诊断完成", detail: values)
+    }
+
+    private func proxyChainDiagnosticEntry(configuration: InternetLatencyConfiguration) async -> InternetDiagnosticEntry {
+        guard core.status.isHealthy else {
+            return InternetDiagnosticEntry(title: "测试代理链", message: "内核未运行，跳过代理链测试", level: .info)
+        }
+        let groups = proxyGroups.isEmpty ? activeProfileProxyGroups : proxyGroups
+        guard let group = groups.first(where: { $0.name == "GLOBAL" }) ?? groups.first else {
+            return InternetDiagnosticEntry(title: "测试代理链", message: "当前没有可用节点组", level: .info)
+        }
+        let proxyName = group.now.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !proxyName.isEmpty, proxyName.uppercased() != "DIRECT" else {
+            return InternetDiagnosticEntry(title: "测试代理链", message: "当前选择 DIRECT，跳过代理链测试", level: .info)
+        }
+
+        let testURL = MihomoAPI.resolvedDelayTestURL(group.testURL)
+        do {
+            let delay = try await api.proxyDelay(
+                proxyName: proxyName,
+                testURL: testURL,
+                timeoutMs: MihomoAPI.fallbackProxyDelayTimeoutMs
+            )
+            guard let delay, delay > 0 else {
+                return InternetDiagnosticEntry(
+                    title: "测试代理链",
+                    message: "通过 \(proxyName) 连接到 \(testURL) 超时",
+                    level: .warning
+                )
+            }
+            proxyNodeStatuses[proxyName] = ProxyNodeRuntimeStatus(delay: delay, alive: true)
+            return InternetDiagnosticEntry(
+                title: "测试代理链",
+                message: "通过 \(proxyName) 连接到 \(testURL): \(delay) ms",
+                level: .success
+            )
+        } catch {
+            return InternetDiagnosticEntry(
+                title: "测试代理链",
+                message: "通过 \(proxyName) 连接到 \(testURL) 失败: \(error.localizedDescription)",
+                level: .warning
+            )
+        }
+    }
+
     func refreshProfiles() {
         do {
             profiles = try profileRepository.listProfiles()
+        } catch {
+            showToast(error.localizedDescription)
+        }
+    }
+
+    private func restoreSelectedProfileIfNeeded() {
+        do {
+            try profileRepository.restoreSelectedProfileIfNeeded()
         } catch {
             showToast(error.localizedDescription)
         }
@@ -641,6 +798,7 @@ final class AppState: ObservableObject {
                 useProxy: useProxy,
                 proxyPort: useProxy ? mixedPort : nil
             )
+            ProfileSelectionPreference.setSelectedProfileID(summary.id)
             refreshProfiles()
             updateActiveProfileFileMonitor()
             loadActiveProfileSnapshot(resetRuntimeData: true)
@@ -662,6 +820,7 @@ final class AppState: ObservableObject {
         do {
             suppressFileChangeNotifications()
             let summary = try profileRepository.importLocalProfile(from: url)
+            ProfileSelectionPreference.setSelectedProfileID(summary.id)
             refreshProfiles()
             updateActiveProfileFileMonitor()
             loadActiveProfileSnapshot(resetRuntimeData: true)
@@ -699,6 +858,7 @@ final class AppState: ObservableObject {
             suppressFileChangeNotifications()
             core.releaseListeningPorts(for: profileRepository.profileFileURL(id: profile.id))
             try profileRepository.activateProfile(id: profile.id)
+            ProfileSelectionPreference.setSelectedProfileID(profile.id)
             refreshProfiles()
             updateActiveProfileFileMonitor()
             loadActiveProfileSnapshot(resetRuntimeData: true)
@@ -746,6 +906,7 @@ final class AppState: ObservableObject {
     func deleteProfile(_ profile: ClashMeowProfileSummary) async {
         do {
             let deletedCurrent = try profileRepository.deleteProfile(id: profile.id)
+            ProfileSelectionPreference.clearIfSelected(profile.id)
             refreshProfiles()
             updateActiveProfileFileMonitor()
             if deletedCurrent {
@@ -764,7 +925,6 @@ final class AppState: ObservableObject {
 
     func setToggle(_ toggle: FeatureToggle, isOn: Bool) {
         guard let index = toggles.firstIndex(where: { $0.id == toggle.id }) else { return }
-        toggles[index].isOn = isOn
         switch toggle.id {
         case "allowLan":
             setAllowLan(isOn)
@@ -773,23 +933,30 @@ final class AppState: ObservableObject {
         case "tun":
             setTunEnabled(isOn)
         default:
+            toggles[index].isOn = isOn
             addEvent(source: "Proxy", title: "\(toggle.title)\(isOn ? "开启" : "关闭")", detail: toggle.subtitle)
         }
     }
 
     func setSystemProxyEnabled(_ isEnabled: Bool, recordPreference: Bool = true) {
-        if recordPreference {
-            SystemProxyPreference.setEnabled(isEnabled)
+        let previousEnabled = systemProxyEnabled
+        let previousPreference = SystemProxyPreference.isEnabled
+        let previousUserPreference = SystemProxyUserPreference.isEnabled
+        let previousToggle = previousEnabled
+        if isEnabled, !core.status.isHealthy {
+            showToast("请先启动内核")
+            systemProxyEnabled = previousEnabled
+            SystemProxyPreference.setEnabled(previousPreference)
+            SystemProxyUserPreference.setEnabled(previousUserPreference)
+            if let index = toggles.firstIndex(where: { $0.id == "proxy" }) {
+                toggles[index].isOn = previousToggle
+            }
+            return
         }
+
         systemProxyEnabled = isEnabled
         if let index = toggles.firstIndex(where: { $0.id == "proxy" }) {
             toggles[index].isOn = isEnabled
-        }
-
-        if isEnabled, !core.status.isHealthy {
-            showToast("请先启动内核")
-            setSystemProxyEnabled(false)
-            return
         }
 
         systemProxyUpdateTask?.cancel()
@@ -797,18 +964,21 @@ final class AppState: ObservableObject {
             guard let self else { return }
             do {
                 try await self.applySystemProxy(isEnabled)
+                SystemProxyPreference.setEnabled(isEnabled)
+                if recordPreference {
+                    SystemProxyUserPreference.setEnabled(isEnabled)
+                }
                 addEvent(
                     source: "Proxy",
                     title: "系统代理\(isEnabled ? "开启" : "关闭")",
                     detail: isEnabled ? "127.0.0.1:\(systemProxyPort)" : "已恢复系统网络设置"
                 )
             } catch {
-                systemProxyEnabled = false
-                if recordPreference {
-                    SystemProxyPreference.setEnabled(false)
-                }
+                systemProxyEnabled = previousEnabled
+                SystemProxyPreference.setEnabled(previousPreference)
+                SystemProxyUserPreference.setEnabled(previousUserPreference)
                 if let index = toggles.firstIndex(where: { $0.id == "proxy" }) {
-                    toggles[index].isOn = false
+                    toggles[index].isOn = previousToggle
                 }
                 addEvent(source: "Proxy", title: "系统代理设置失败", detail: error.localizedDescription)
                 showToast("系统代理设置失败")
@@ -816,27 +986,57 @@ final class AppState: ObservableObject {
         }
     }
 
-    func setTunEnabled(_ isEnabled: Bool, recordPreference: Bool = true) {
-        if recordPreference {
-            TunPreference.setEnabled(isEnabled)
+    func setTunEnabled(_ isEnabled: Bool, recordPreference: Bool = true, restartIfNeeded: Bool = true) {
+        let previousPreference = TunPreference.isEnabled
+        let previousUserPreference = TunUserPreference.isEnabled
+        let previousToggle = toggles.first(where: { $0.id == "tun" })?.isOn ?? previousPreference
+        if isApplyingTunUpdate {
+            showToast("增强模式正在应用，请稍后再试")
+            if let index = toggles.firstIndex(where: { $0.id == "tun" }) {
+                toggles[index].isOn = previousToggle
+            }
+            return
         }
+        if isEnabled, !core.status.isHealthy {
+            showToast("请先启动内核")
+            TunPreference.setEnabled(previousPreference)
+            TunUserPreference.setEnabled(previousUserPreference)
+            if let index = toggles.firstIndex(where: { $0.id == "tun" }) {
+                toggles[index].isOn = previousToggle
+            }
+            return
+        }
+
         if let index = toggles.firstIndex(where: { $0.id == "tun" }) {
             toggles[index].isOn = isEnabled
         }
 
-        tunUpdateTask?.cancel()
+        isApplyingTunUpdate = true
         tunUpdateTask = Task { [weak self] in
             guard let self else { return }
+            defer {
+                isApplyingTunUpdate = false
+                tunUpdateTask = nil
+            }
             do {
-                try await applyTunEnabled(isEnabled)
+                try await applyTunEnabled(isEnabled, restartIfNeeded: restartIfNeeded)
+                TunPreference.setEnabled(isEnabled)
+                if recordPreference {
+                    TunUserPreference.setEnabled(isEnabled)
+                }
+                if let index = toggles.firstIndex(where: { $0.id == "tun" }) {
+                    toggles[index].isOn = isEnabled
+                }
                 addEvent(
                     source: "TUN",
                     title: "TUN \(isEnabled ? "开启" : "关闭")",
-                    detail: isEnabled ? tunDevice : "已写入配置并重启内核"
+                    detail: isEnabled ? tunDevice : "已写入配置并应用"
                 )
             } catch {
-                if recordPreference {
-                    setTunEnabled(!isEnabled, recordPreference: false)
+                TunPreference.setEnabled(previousPreference)
+                TunUserPreference.setEnabled(previousUserPreference)
+                if let index = toggles.firstIndex(where: { $0.id == "tun" }) {
+                    toggles[index].isOn = previousToggle
                 }
                 addEvent(source: "TUN", title: "TUN 设置失败", detail: error.localizedDescription)
                 showToast("TUN 设置失败")
@@ -858,10 +1058,22 @@ final class AppState: ObservableObject {
         }
 
         let desiredTun = TunPreference.isEnabled
+        guard core.status.isHealthy else {
+            if desiredTun {
+                TunPreference.setEnabled(false)
+                if let index = toggles.firstIndex(where: { $0.id == "tun" }) {
+                    toggles[index].isOn = false
+                }
+            }
+            return
+        }
+
         let currentTun = activeProfileConfig?.tun?.enable ?? false
         if desiredTun != currentTun {
             do {
-                try await applyTunEnabled(desiredTun, restartIfNeeded: core.status.isHealthy)
+                isApplyingTunUpdate = true
+                defer { isApplyingTunUpdate = false }
+                try await applyTunEnabled(desiredTun)
                 if let index = toggles.firstIndex(where: { $0.id == "tun" }) {
                     toggles[index].isOn = desiredTun
                 }
@@ -872,17 +1084,17 @@ final class AppState: ObservableObject {
     }
 
     private func applySystemProxy(_ isEnabled: Bool) async throws {
-        let savedService = UserDefaults.standard.string(forKey: Self.systemProxyNetworkServiceKey)
+        let savedService = AppPreferenceStore.string(\.systemProxyNetworkService)
         let configuration = try systemProxyController.resolvedConfiguration(
             port: systemProxyPort,
             networkService: savedService
         )
         try systemProxyController.setEnabled(isEnabled, configuration: configuration)
-        UserDefaults.standard.set(configuration.networkService, forKey: Self.systemProxyNetworkServiceKey)
+        AppPreferenceStore.setString(configuration.networkService, \.systemProxyNetworkService)
     }
 
     private func disableSystemProxySynchronously() {
-        let savedService = UserDefaults.standard.string(forKey: Self.systemProxyNetworkServiceKey)
+        let savedService = AppPreferenceStore.string(\.systemProxyNetworkService)
         let port = systemProxyPort
         if let configuration = try? systemProxyController.resolvedConfiguration(
             port: port,
@@ -891,21 +1103,119 @@ final class AppState: ObservableObject {
             try? systemProxyController.setEnabled(false, configuration: configuration)
         }
         systemProxyEnabled = false
+        SystemProxyPreference.setEnabled(false)
     }
 
     private func applyTunEnabled(_ isEnabled: Bool, restartIfNeeded: Bool = true) async throws {
         suppressFileChangeNotifications()
         let yaml = try String(contentsOf: core.configFile, encoding: .utf8)
-        let updated = MihomoYAMLSettings.setTunEnabled(isEnabled, in: yaml)
-        try updated.write(to: core.configFile, atomically: true, encoding: .utf8)
-        loadActiveProfileSnapshot()
-        syncPublishedTunConfig(isEnabled: isEnabled)
+        let previousTunEnabled = activeProfileConfig?.tun?.enable ?? false
+        let shouldRestart = restartIfNeeded && core.status.shouldReloadForProfileChange
+        let updated = try MihomoYAMLSettings.setTunEnabled(isEnabled, in: yaml)
 
-        guard restartIfNeeded, core.status.shouldReloadForProfileChange else { return }
+        do {
+            try updated.write(to: core.configFile, atomically: true, encoding: .utf8)
+            loadActiveProfileSnapshot()
+            syncPublishedTunConfig(isEnabled: isEnabled)
+
+            guard shouldRestart else { return }
+            try await applyCoreAfterTunChange(isEnabled: isEnabled)
+            await refresh()
+        } catch {
+            try? yaml.write(to: core.configFile, atomically: true, encoding: .utf8)
+            loadActiveProfileSnapshot()
+            syncPublishedTunConfig(isEnabled: previousTunEnabled)
+            if shouldRestart {
+                #if DEBUG
+                if tunRestartForTesting == nil {
+                    await recoverCoreAfterTunRollback()
+                }
+                #else
+                await recoverCoreAfterTunRollback()
+                #endif
+            }
+            throw error
+        }
+    }
+
+    private func applyCoreAfterTunChange(isEnabled: Bool) async throws {
+        do {
+            try await reloadCoreConfigAfterTunChange(isEnabled: isEnabled)
+        } catch {
+            AppLogSupport.warning(
+                "TUN API reload 失败，fallback restart: \(error.localizedDescription)",
+                module: "TUN",
+                logsDirectory: core.logsDirectory
+            )
+            try await restartCoreAfterTunChange()
+            try await validateRuntimeTunEnabled(isEnabled)
+        }
+    }
+
+    private func reloadCoreConfigAfterTunChange(isEnabled: Bool) async throws {
+        try await api.reloadConfig(path: core.configFile)
+        try await validateRuntimeTunEnabled(isEnabled)
+    }
+
+    private func validateRuntimeTunEnabled(_ expected: Bool) async throws {
+        let runtimeConfig = try await api.configs()
+        let actual = runtimeConfig.tun?.enable
+        guard actual == expected else {
+            throw TunUpdateError.runtimeTunMismatch(expected: expected, actual: actual)
+        }
+    }
+
+    private func restartCoreAfterTunChange() async throws {
+        #if DEBUG
+        if let tunRestartForTesting {
+            try await tunRestartForTesting()
+        } else {
+            core.releaseListeningPorts()
+            core.restart()
+        }
+        #else
         core.releaseListeningPorts()
         core.restart()
-        try await Task.sleep(for: .milliseconds(800))
-        await refresh()
+        #endif
+        try await waitForCoreHealthyAfterTunRestart()
+    }
+
+    private func waitForCoreHealthyAfterTunRestart(timeout: TimeInterval = 12) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        var lastError: Error?
+        repeat {
+            if core.status.isHealthy {
+                do {
+                    _ = try await api.version()
+                    return
+                } catch {
+                    lastError = error
+                }
+            }
+            switch core.status {
+            case .failed, .missingBinary:
+                throw TunUpdateError.coreRestartFailed(core.status)
+            case .starting, .stopped, .running:
+                break
+            }
+            try await Task.sleep(for: .milliseconds(100))
+        } while Date() < deadline
+        if let lastError {
+            throw lastError
+        }
+        throw TunUpdateError.coreRestartTimedOut
+    }
+
+    private func recoverCoreAfterTunRollback() async {
+        if core.status.isHealthy {
+            core.restart()
+        } else {
+            core.start()
+        }
+        try? await waitForCoreHealthyAfterTunRestart()
+        if core.status.isHealthy {
+            await refresh()
+        }
     }
 
     private func syncPublishedTunConfig(isEnabled: Bool) {
@@ -952,7 +1262,7 @@ final class AppState: ObservableObject {
 
     func setForwardingMode(_ mode: MihomoMode) {
         forwardingMode = mode
-        UserDefaults.standard.set(mode.rawValue, forKey: Self.forwardingModeKey)
+        AppPreferenceStore.setString(mode.rawValue, \.forwardingMode)
         config = config.map {
             MihomoConfig(
                 port: $0.port,
@@ -1014,12 +1324,12 @@ final class AppState: ObservableObject {
             activeProfileProxyGroups = activeProfileProxyGroups.map { group in
                 updatedProxyGroup(group, groupID: groupID, proxyName: proxyName) ?? group
             }
-            addEvent(source: "Proxy", title: "切换节点", detail: "\(apiGroupName) → \(proxyName)")
+            addEvent(source: "Proxy", title: "切换代理", detail: "\(apiGroupName) → \(proxyName)")
             showToast("已切换到 \(proxyName)")
             await refresh()
         } catch {
-            addEvent(source: "Proxy", title: "节点切换失败", detail: error.localizedDescription)
-            showToast("节点切换失败")
+            addEvent(source: "Proxy", title: "代理切换失败", detail: error.localizedDescription)
+            showToast("代理切换失败")
         }
     }
 
@@ -1049,7 +1359,11 @@ final class AppState: ObservableObject {
     }
 
     func testDelay(for group: ProxyGroupItem) async {
-        guard core.status.isHealthy, testingDelayGroupID == nil else { return }
+        guard core.status.isHealthy else {
+            showToast("请先启动内核，再测试代理延迟")
+            return
+        }
+        guard testingDelayGroupID == nil else { return }
 
         let seedNodes = Self.resolvedProxyNodes(for: group)
         guard !seedNodes.isEmpty else { return }
@@ -1099,7 +1413,11 @@ final class AppState: ObservableObject {
 
         var nodes: [ProxyGroupNode] = []
         for node in seedNodes {
-            let measured = try? await api.proxyDelay(proxyName: node.name, testURL: testURL, timeoutMs: 5_000)
+            let measured = try? await api.proxyDelay(
+                proxyName: node.name,
+                testURL: testURL,
+                timeoutMs: MihomoAPI.fallbackProxyDelayTimeoutMs
+            )
             nodes.append(Self.proxyGroupNode(from: node, measuredDelay: measured))
         }
         return nodes
@@ -1177,19 +1495,125 @@ final class AppState: ObservableObject {
     }
 
     func setRule(_ rule: RuleItem, isEnabled: Bool) async {
+        guard let profileID = currentProfile?.id else {
+            showToast("没有当前配置")
+            return
+        }
+
         do {
-            try await api.setRuleEnabled(index: rule.index, isEnabled: isEnabled)
-            if let index = rules.firstIndex(where: { $0.id == rule.id }) {
-                rules[index].isEnabled = isEnabled
-            }
-            addEvent(source: "Rule", title: isEnabled ? "启用规则" : "禁用规则", detail: rule.payload.isEmpty ? rule.type : rule.payload)
+            suppressFileChangeNotifications()
+            try profileRepository.setRuleDeletedOverride(
+                profileID: profileID,
+                rule: rule.overrideRuleText,
+                isDeleted: !isEnabled
+            )
+            refreshProfiles()
+            updateActiveProfileFileMonitor()
+            loadActiveProfileSnapshot()
+            await applyRuleToggleRuntimeChange(rule: rule, isEnabled: isEnabled)
+            addEvent(source: "Rule", title: isEnabled ? "启用规则" : "关闭规则", detail: rule.overrideRuleText)
         } catch {
+            showToast("规则修改失败")
             addEvent(source: "Rule", title: "规则修改失败", detail: error.localizedDescription)
         }
     }
 
+    func refreshRules() async {
+        guard core.status.isHealthy else { return }
+        do {
+            async let refreshedRules = api.rules()
+            async let refreshedProviders = api.ruleProviders()
+            rules = try await refreshedRules
+            ruleProviders = (try? await refreshedProviders) ?? ruleProviders
+        } catch {
+            showToast("规则刷新失败")
+            addEvent(source: "Rule", title: "规则刷新失败", detail: error.localizedDescription)
+        }
+    }
+
+    func isUpdatingRuleProvider(_ provider: RuleProviderItem) -> Bool {
+        updatingRuleProviderNames.contains(provider.name)
+    }
+
+    func updateRuleProvider(_ provider: RuleProviderItem) async {
+        guard core.status.isHealthy else { return }
+        updatingRuleProviderNames.insert(provider.name)
+        defer { updatingRuleProviderNames.remove(provider.name) }
+
+        do {
+            try await api.updateRuleProvider(name: provider.name)
+            async let refreshedRules = api.rules()
+            async let refreshedProviders = api.ruleProviders()
+            if let fetchedRules = try? await refreshedRules {
+                rules = fetchedRules
+            }
+            ruleProviders = try await refreshedProviders
+            addEvent(source: "Rule", title: "更新规则集合", detail: provider.name)
+        } catch {
+            showToast("规则集合更新失败")
+            addEvent(source: "Rule", title: "规则集合更新失败", detail: error.localizedDescription)
+        }
+    }
+
+    func updateAllRuleProviders() async {
+        guard core.status.isHealthy, !ruleProviders.isEmpty else { return }
+        let providers = ruleProviders
+        updatingRuleProviderNames.formUnion(providers.map(\.name))
+        defer { updatingRuleProviderNames.subtract(providers.map(\.name)) }
+
+        do {
+            for provider in providers {
+                try await api.updateRuleProvider(name: provider.name)
+            }
+            async let refreshedRules = api.rules()
+            async let refreshedProviders = api.ruleProviders()
+            if let fetchedRules = try? await refreshedRules {
+                rules = fetchedRules
+            }
+            ruleProviders = try await refreshedProviders
+            addEvent(source: "Rule", title: "更新全部规则集合", detail: "\(providers.count) 个 provider")
+        } catch {
+            showToast("规则集合更新失败")
+            addEvent(source: "Rule", title: "规则集合更新失败", detail: error.localizedDescription)
+        }
+    }
+
+    func addRuleOverride(_ ruleText: String, placement: RuleOverridePlacement) async {
+        let rule = ruleText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rule.isEmpty else {
+            showToast("规则不能为空")
+            return
+        }
+        guard let profileID = currentProfile?.id else {
+            showToast("没有当前配置")
+            return
+        }
+
+        do {
+            suppressFileChangeNotifications()
+            try profileRepository.addRuleOverride(profileID: profileID, rule: rule, placement: placement)
+            refreshProfiles()
+            updateActiveProfileFileMonitor()
+            loadActiveProfileSnapshot()
+            await applyRuleOverrideRuntimeChange(toastMessage: "已添加规则")
+            addEvent(source: "Rule", title: "添加配置规则", detail: rule)
+        } catch {
+            showToast("添加规则失败")
+            addEvent(source: "Rule", title: "添加规则失败", detail: error.localizedDescription)
+        }
+    }
+
     func loadLogs() {
-        logs = CoreLogSupport.recentLogs(from: core.coreLogFile, limit: 500)
+        loadLogs(source: LogPreference.defaultSource)
+    }
+
+    func loadLogs(source: LogSourceFilter) {
+        logs = CoreLogSupport.recentLogs(
+            coreFile: core.coreLogFile,
+            appFile: core.appLogFile,
+            source: source,
+            limit: 500
+        )
     }
 
     func startLogStream(level: LogLevelFilter) {
@@ -1197,6 +1621,11 @@ final class AppState: ObservableObject {
         logStreamTask?.cancel()
         isStreamingLogs = true
         let selectedLevel = level.controllerValue ?? displayedConfig?.logLevel
+        AppLogSupport.info(
+            "开始跟随 mihomo 日志，level=\(selectedLevel ?? "config")",
+            module: "Logs",
+            logsDirectory: core.logsDirectory
+        )
         logStreamTask = Task { [weak self] in
             guard let self else { return }
             do {
@@ -1205,6 +1634,7 @@ final class AppState: ObservableObject {
                 }
             } catch {
                 isStreamingLogs = false
+                AppLogSupport.error("mihomo 日志流断开: \(error.localizedDescription)", module: "Logs", logsDirectory: core.logsDirectory)
             }
         }
     }
@@ -1213,6 +1643,7 @@ final class AppState: ObservableObject {
         logStreamTask?.cancel()
         logStreamTask = nil
         isStreamingLogs = false
+        AppLogSupport.info("停止跟随 mihomo 日志", module: "Logs", logsDirectory: core.logsDirectory)
     }
 
     func stopTrafficStream() {
@@ -1266,9 +1697,48 @@ final class AppState: ObservableObject {
         logs = []
     }
 
+    func logFileURL(for source: LogSourceFilter) -> URL {
+        switch source {
+        case .core:
+            return core.coreLogFile
+        case .app:
+            return core.appLogFile
+        case .all:
+            return core.logsDirectory
+        }
+    }
+
+    func openLogFile(source: LogSourceFilter) {
+        let url = logFileURL(for: source)
+        NSWorkspace.shared.open(url)
+        AppLogSupport.info("打开日志文件: \(url.path)", module: "Logs", logsDirectory: core.logsDirectory)
+    }
+
+    func revealLogFile(source: LogSourceFilter) {
+        let url = logFileURL(for: source)
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+        AppLogSupport.info("在 Finder 中显示日志文件: \(url.path)", module: "Logs", logsDirectory: core.logsDirectory)
+    }
+
+    func clearLogFile(source: LogSourceFilter) {
+        switch source {
+        case .core:
+            try? CoreLogSupport.truncate(core.coreLogFile)
+        case .app:
+            try? CoreLogSupport.truncate(core.appLogFile)
+        case .all:
+            try? CoreLogSupport.truncate(core.coreLogFile)
+            try? CoreLogSupport.truncate(core.appLogFile)
+        }
+        logs = []
+        if source == .core {
+            AppLogSupport.warning("已清空日志文件 source=\(source.rawValue)", module: "Logs", logsDirectory: core.logsDirectory)
+        }
+    }
+
     func setAllowLan(_ isEnabled: Bool) {
         allowLan = isEnabled
-        UserDefaults.standard.set(isEnabled, forKey: Self.allowLanKey)
+        AppPreferenceStore.setBool(isEnabled, \.allowLan)
         if let index = toggles.firstIndex(where: { $0.id == "allowLan" }) {
             toggles[index].isOn = isEnabled
         }
@@ -1386,6 +1856,7 @@ final class AppState: ObservableObject {
     }
 
     private var shouldSuppressFileChangeNotification: Bool {
+        if isApplyingTunUpdate { return true }
         if isImportingProfile || !refreshingProfileIDs.isEmpty { return true }
         guard let suppressFileChangeNotificationsUntil else { return false }
         return Date() < suppressFileChangeNotificationsUntil
@@ -1393,22 +1864,39 @@ final class AppState: ObservableObject {
 
     private func handleConfigurationFileChange(from source: ObservedConfigFile) {
         guard !shouldSuppressFileChangeNotification else { return }
+        guard !isApplyingObservedConfigurationChange else {
+            pendingObservedConfigurationChange = source
+            return
+        }
         configReloadTask?.cancel()
         configReloadTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(350))
             guard !Task.isCancelled else { return }
-            self?.applyObservedConfigurationFileChange(from: source)
+            await self?.applyObservedConfigurationFileChange(from: source)
         }
     }
 
-    private func applyObservedConfigurationFileChange(from source: ObservedConfigFile) {
+    private func applyObservedConfigurationFileChange(from source: ObservedConfigFile) async {
+        guard !isApplyingObservedConfigurationChange else {
+            pendingObservedConfigurationChange = source
+            return
+        }
+        isApplyingObservedConfigurationChange = true
+        defer {
+            isApplyingObservedConfigurationChange = false
+            if let pendingObservedConfigurationChange {
+                self.pendingObservedConfigurationChange = nil
+                handleConfigurationFileChange(from: pendingObservedConfigurationChange)
+            }
+        }
+
         if source == .activeProfile, let currentProfile {
             do {
                 suppressFileChangeNotifications()
                 core.releaseListeningPorts(for: profileRepository.profileFileURL(id: currentProfile.id))
                 try profileRepository.activateProfile(id: currentProfile.id)
             } catch {
-                showToast("配置文件更新失败")
+                handleObservedConfigurationApplyFailure(error, title: "配置文件更新失败")
                 return
             }
         }
@@ -1416,8 +1904,29 @@ final class AppState: ObservableObject {
         refreshProfiles()
         updateActiveProfileFileMonitor()
         loadActiveProfileSnapshot(resetRuntimeData: true)
-        reloadCoreAfterProfileChange(toastMessage: "检测到配置文件修改，已应用新配置")
-        addEvent(source: "Config", title: "配置文件已更新", detail: currentProfileName)
+        do {
+            try await applyReloadAfterObservedConfigurationChange()
+            showToast("检测到配置文件修改，已应用新配置")
+            addEvent(source: "Config", title: "配置文件已更新", detail: currentProfileName)
+        } catch {
+            handleObservedConfigurationApplyFailure(error, title: "配置文件应用失败")
+        }
+    }
+
+    private func handleObservedConfigurationApplyFailure(_ error: Error, title: String) {
+        let detail = error.localizedDescription
+        showToast(title)
+        addEvent(source: "Config", title: title, detail: detail)
+        AppLogSupport.error("\(title): \(detail)", module: "Config", logsDirectory: core.logsDirectory)
+    }
+
+    private func applyReloadAfterObservedConfigurationChange() async throws {
+        let shouldRefreshAfterRestart = core.status.shouldReloadForProfileChange
+        if shouldRefreshAfterRestart {
+            core.restart()
+            try await waitForControllerReadyAfterCoreStart()
+        }
+        await refresh()
     }
 
     private func updateAPIEndpoint(from config: MihomoConfig?) {
@@ -1439,7 +1948,7 @@ final class AppState: ObservableObject {
         updateAPIEndpoint(from: activeProfileConfig)
         activeProfileProxyGroups = ProxyGroupItem.parsed(from: yaml)
         activeProfileNodes = ProxyNodeInfo.parsed(from: yaml)
-        if UserDefaults.standard.string(forKey: Self.forwardingModeKey) == nil,
+        if AppPreferenceStore.string(\.forwardingMode) == nil,
            let activeMode = activeProfileConfig?.mode {
             forwardingMode = MihomoMode(configValue: activeMode)
         }
@@ -1470,11 +1979,58 @@ final class AppState: ObservableObject {
         }
         Task { [weak self] in
             if shouldRefreshAfterRestart {
-                try? await Task.sleep(for: .milliseconds(800))
+                try? await self?.waitForControllerReadyAfterCoreStart()
             }
             await self?.refresh()
             if let toastMessage {
                 self?.showToast(toastMessage)
+            }
+        }
+    }
+
+    private func applyRuleOverrideRuntimeChange(toastMessage: String) async {
+        guard core.status.isHealthy else {
+            showToast(toastMessage)
+            addEvent(source: "Rule", title: "规则已保存", detail: "内核未运行，将在下次启动时生效。")
+            return
+        }
+
+        do {
+            try await api.reloadConfig(path: core.configFile)
+            await refresh()
+            showToast(toastMessage)
+            addEvent(source: "Rule", title: "规则热更新", detail: "已通过 controller 重新加载 runtime config。")
+        } catch {
+            showToast("规则已保存，热更新失败")
+            addEvent(source: "Rule", title: "规则热更新失败", detail: error.localizedDescription)
+            AppLogSupport.error("规则热更新失败: \(error.localizedDescription)", module: "Rule", logsDirectory: core.logsDirectory)
+        }
+    }
+
+    private func applyRuleToggleRuntimeChange(rule: RuleItem, isEnabled: Bool) async {
+        let toastMessage = isEnabled ? "已启用规则" : "已关闭规则"
+        guard core.status.isHealthy else {
+            showToast(toastMessage)
+            addEvent(source: "Rule", title: "规则已保存", detail: "内核未运行，将在下次启动时生效。")
+            return
+        }
+
+        do {
+            try await api.setRuleEnabled(index: rule.index, isEnabled: isEnabled)
+            await refreshRules()
+            showToast(toastMessage)
+            addEvent(source: "Rule", title: "规则热更新", detail: "已通过 controller 更新规则状态。")
+        } catch {
+            do {
+                try await api.reloadConfig(path: core.configFile)
+                await refreshRules()
+                showToast(toastMessage)
+                addEvent(source: "Rule", title: "规则热更新", detail: "规则状态接口失败，已重新加载 runtime config。")
+            } catch {
+                await refreshRules()
+                showToast("规则已保存，热更新失败")
+                addEvent(source: "Rule", title: "规则热更新失败", detail: error.localizedDescription)
+                AppLogSupport.error("规则热更新失败: \(error.localizedDescription)", module: "Rule", logsDirectory: core.logsDirectory)
             }
         }
     }
@@ -1627,7 +2183,7 @@ final class AppState: ObservableObject {
             return
         }
         forwardingMode = controllerMode
-        UserDefaults.standard.set(controllerMode.rawValue, forKey: Self.forwardingModeKey)
+        AppPreferenceStore.setString(controllerMode.rawValue, \.forwardingMode)
         AppDebugLog.mode("切换失败已回滚 UI 模式 \(failedTarget.mihomoValue) -> \(controllerMode.mihomoValue)")
     }
 
@@ -1645,11 +2201,12 @@ final class AppState: ObservableObject {
         }
     }
 
-    private static func makeProxyGroups(
+    static func makeProxyGroups(
         from response: ProxiesResponse,
+        configuredGroups: [ProxyGroupItem] = [],
         delayOverrides: [String: ProxyNodeRuntimeStatus] = [:]
     ) -> [ProxyGroupItem] {
-        response.proxies
+        let runtimeGroups = response.proxies
             .compactMap { key, node -> ProxyGroupItem? in
                 guard let type = node.type, node.all?.isEmpty == false, node.hidden != true else { return nil }
                 let all = node.all ?? []
@@ -1682,11 +2239,33 @@ final class AppState: ObservableObject {
                     testURL: node.testURL
                 )
             }
-            .sorted { lhs, rhs in
-                if lhs.name == "GLOBAL" { return true }
-                if rhs.name == "GLOBAL" { return false }
+
+        guard !configuredGroups.isEmpty else {
+            return runtimeGroups.sorted { lhs, rhs in
+                if isGlobalProxyGroup(lhs) { return true }
+                if isGlobalProxyGroup(rhs) { return false }
                 return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
             }
+        }
+
+        var consumedIDs = Set<String>()
+        let configuredOrder = configuredGroups.compactMap { configuredGroup -> ProxyGroupItem? in
+            guard let group = runtimeGroups.first(where: { runtimeGroup in
+                !consumedIDs.contains(runtimeGroup.id)
+                    && (runtimeGroup.id == configuredGroup.id
+                        || runtimeGroup.name == configuredGroup.name
+                        || runtimeGroup.id.caseInsensitiveCompare(configuredGroup.id) == .orderedSame
+                        || runtimeGroup.name.caseInsensitiveCompare(configuredGroup.name) == .orderedSame)
+            }) else {
+                return nil
+            }
+            consumedIDs.insert(group.id)
+            return group
+        }
+        let appendedGroups = runtimeGroups
+            .filter { !consumedIDs.contains($0.id) }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        return configuredOrder + appendedGroups
     }
 
     private static func makeProxyNodeStatuses(from response: ProxiesResponse) -> [String: ProxyNodeRuntimeStatus] {

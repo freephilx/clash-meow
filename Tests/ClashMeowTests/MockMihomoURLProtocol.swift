@@ -10,8 +10,26 @@ private final class MockMihomoStore: @unchecked Sendable {
     var selectProxyCalls: [(group: String, name: String)] = []
     var handledRequests: [(method: String, path: String)] = []
     var patchModeShouldFail = false
+    var tunEnabled = false
+    var reloadConfigShouldFail = false
+    var versionFailureCount = 0
+    var groupDelayShouldFail = false
+    var proxyDelayResults: [String: Int] = [:]
+    var disabledRuleIndexes = Set<Int>()
+    var ruleDisableShouldFail = false
 
-    func reset(mode: String = "rule", globalNow: String = "Tokyo-01", patchModeShouldFail: Bool = false) {
+    func reset(
+        mode: String = "rule",
+        globalNow: String = "Tokyo-01",
+        patchModeShouldFail: Bool = false,
+        tunEnabled: Bool = false,
+        reloadConfigShouldFail: Bool = false,
+        versionFailureCount: Int = 0,
+        groupDelayShouldFail: Bool = false,
+        proxyDelayResults: [String: Int] = [:],
+        disabledRuleIndexes: Set<Int> = [],
+        ruleDisableShouldFail: Bool = false
+    ) {
         lock.withLock {
             self.mode = mode
             self.globalNow = globalNow
@@ -19,6 +37,13 @@ private final class MockMihomoStore: @unchecked Sendable {
             selectProxyCalls = []
             handledRequests = []
             self.patchModeShouldFail = patchModeShouldFail
+            self.tunEnabled = tunEnabled
+            self.reloadConfigShouldFail = reloadConfigShouldFail
+            self.versionFailureCount = versionFailureCount
+            self.groupDelayShouldFail = groupDelayShouldFail
+            self.proxyDelayResults = proxyDelayResults
+            self.disabledRuleIndexes = disabledRuleIndexes
+            self.ruleDisableShouldFail = ruleDisableShouldFail
         }
     }
 
@@ -44,9 +69,61 @@ private final class MockMihomoStore: @unchecked Sendable {
         }
     }
 
-    func snapshot() -> (mode: String, globalNow: String, patchModeCalls: [String], selectProxyCalls: [(group: String, name: String)], handledRequests: [(method: String, path: String)], patchModeShouldFail: Bool) {
+    func setTunEnabled(_ enabled: Bool) {
         lock.withLock {
-            (mode, globalNow, patchModeCalls, selectProxyCalls, handledRequests, patchModeShouldFail)
+            tunEnabled = enabled
+        }
+    }
+
+    func setRuleDisabled(index: Int, disabled: Bool) {
+        lock.withLock {
+            if disabled {
+                disabledRuleIndexes.insert(index)
+            } else {
+                disabledRuleIndexes.remove(index)
+            }
+        }
+    }
+
+    func consumeVersionFailure() -> Bool {
+        lock.withLock {
+            guard versionFailureCount > 0 else { return false }
+            versionFailureCount -= 1
+            return true
+        }
+    }
+
+    func snapshot() -> (
+        mode: String,
+        globalNow: String,
+        patchModeCalls: [String],
+        selectProxyCalls: [(group: String, name: String)],
+        handledRequests: [(method: String, path: String)],
+        patchModeShouldFail: Bool,
+        tunEnabled: Bool,
+        reloadConfigShouldFail: Bool,
+        versionFailureCount: Int,
+        groupDelayShouldFail: Bool,
+        proxyDelayResults: [String: Int],
+        disabledRuleIndexes: Set<Int>,
+        ruleDisableShouldFail: Bool
+    ) {
+        lock.withLock {
+            (
+                mode,
+                globalNow,
+                patchModeCalls,
+                selectProxyCalls,
+                handledRequests,
+                patchModeShouldFail,
+                tunEnabled,
+                reloadConfigShouldFail,
+                versionFailureCount,
+                groupDelayShouldFail,
+                proxyDelayResults,
+                disabledRuleIndexes,
+                ruleDisableShouldFail
+            )
         }
     }
 }
@@ -73,8 +150,38 @@ enum MockMihomoURLProtocolSupport {
         MockMihomoStore.shared.snapshot().handledRequests
     }
 
-    static func reset(mode: String = "rule", globalNow: String = "Tokyo-01", patchModeShouldFail: Bool = false) {
-        MockMihomoStore.shared.reset(mode: mode, globalNow: globalNow, patchModeShouldFail: patchModeShouldFail)
+    static var disabledRuleIndexes: Set<Int> {
+        MockMihomoStore.shared.snapshot().disabledRuleIndexes
+    }
+
+    static func setRuntimeTunEnabled(_ enabled: Bool) {
+        MockMihomoStore.shared.setTunEnabled(enabled)
+    }
+
+    static func reset(
+        mode: String = "rule",
+        globalNow: String = "Tokyo-01",
+        patchModeShouldFail: Bool = false,
+        tunEnabled: Bool = false,
+        reloadConfigShouldFail: Bool = false,
+        versionFailureCount: Int = 0,
+        groupDelayShouldFail: Bool = false,
+        proxyDelayResults: [String: Int] = [:],
+        disabledRuleIndexes: Set<Int> = [],
+        ruleDisableShouldFail: Bool = false
+    ) {
+        MockMihomoStore.shared.reset(
+            mode: mode,
+            globalNow: globalNow,
+            patchModeShouldFail: patchModeShouldFail,
+            tunEnabled: tunEnabled,
+            reloadConfigShouldFail: reloadConfigShouldFail,
+            versionFailureCount: versionFailureCount,
+            groupDelayShouldFail: groupDelayShouldFail,
+            proxyDelayResults: proxyDelayResults,
+            disabledRuleIndexes: disabledRuleIndexes,
+            ruleDisableShouldFail: ruleDisableShouldFail
+        )
     }
 }
 
@@ -106,11 +213,30 @@ final class MockMihomoURLProtocol: URLProtocol {
 
         do {
             if method == "GET", path.hasSuffix("/version") || path == "/version" {
+                if store.consumeVersionFailure() {
+                    try respond(statusCode: 503, data: Data("controller not ready".utf8))
+                    return
+                }
                 try respond(json: ["version": "test", "premium": true, "meta": true])
                 return
             }
             if method == "GET", path.hasSuffix("/configs") || path == "/configs" {
-                try respond(json: Self.configPayload(mode: store.snapshot().mode))
+                let snapshot = store.snapshot()
+                try respond(json: Self.configPayload(mode: snapshot.mode, tunEnabled: snapshot.tunEnabled))
+                return
+            }
+            if method == "PUT", path.hasSuffix("/configs") || path == "/configs" {
+                if store.snapshot().reloadConfigShouldFail {
+                    try respond(statusCode: 500, data: Data("config reload failed".utf8))
+                    return
+                }
+                if let body = request.httpBody ?? request.httpBodyStream.flatMap(readBody(from:)),
+                   let object = try JSONSerialization.jsonObject(with: body) as? [String: Any],
+                   let path = object["path"] as? String {
+                    let yaml = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+                    store.setTunEnabled(Self.yamlTunEnabled(yaml))
+                }
+                try respond(statusCode: 204, data: Data())
                 return
             }
             if method == "PATCH", path.hasSuffix("/configs") || path == "/configs" {
@@ -140,12 +266,60 @@ final class MockMihomoURLProtocol: URLProtocol {
                 try respond(statusCode: 204, data: Data())
                 return
             }
+            if method == "GET", path.contains("/group/"), path.hasSuffix("/delay") {
+                if store.snapshot().groupDelayShouldFail, path.contains("/group/GLOBAL/") {
+                    try respond(statusCode: 404, data: Data("group delay unavailable".utf8))
+                    return
+                }
+                try respond(json: [
+                    "HK-01": 120,
+                    "JP-02": ["delay": 88],
+                    "timeout-node": ["message": "timeout"]
+                ])
+                return
+            }
+            if method == "GET", path.contains("/proxies/"), path.hasSuffix("/delay") {
+                let encodedName = path
+                    .replacingOccurrences(of: "/proxies/", with: "")
+                    .replacingOccurrences(of: "/delay", with: "")
+                let name = encodedName.removingPercentEncoding ?? encodedName
+                let results = store.snapshot().proxyDelayResults
+                guard let delay = results[name] else {
+                    try respond(statusCode: 404, data: Data("proxy delay unavailable".utf8))
+                    return
+                }
+                try respond(json: ["delay": delay])
+                return
+            }
             if method == "GET", path.hasSuffix("/connections") || path == "/connections" {
                 try respond(json: ["downloadTotal": 0, "uploadTotal": 0, "connections": []])
                 return
             }
+            if method == "GET", path.hasSuffix("/providers/rules") || path == "/providers/rules" {
+                try respond(json: Self.ruleProvidersPayload())
+                return
+            }
+            if method == "PUT", path.contains("/providers/rules/") {
+                try respond(statusCode: 204, data: Data())
+                return
+            }
             if method == "GET", path.hasSuffix("/rules") || path == "/rules" {
-                try respond(json: ["rules": []])
+                try respond(json: Self.rulesPayload(disabledRuleIndexes: store.snapshot().disabledRuleIndexes))
+                return
+            }
+            if method == "PATCH", path.hasSuffix("/rules/disable") || path == "/rules/disable" {
+                if store.snapshot().ruleDisableShouldFail {
+                    try respond(statusCode: 500, data: Data("rule disable failed".utf8))
+                    return
+                }
+                if let body = request.httpBody ?? request.httpBodyStream.flatMap(readBody(from:)),
+                   let object = try JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                    for (key, value) in object {
+                        guard let index = Int(key), let disabled = value as? Bool else { continue }
+                        store.setRuleDisabled(index: index, disabled: disabled)
+                    }
+                }
+                try respond(statusCode: 204, data: Data())
                 return
             }
             if method == "GET", path.hasSuffix("/traffic") || path == "/traffic" {
@@ -194,14 +368,40 @@ final class MockMihomoURLProtocol: URLProtocol {
         client.urlProtocolDidFinishLoading(self)
     }
 
-    private static func configPayload(mode: String) -> [String: Any] {
+    private static func yamlTunEnabled(_ yaml: String) -> Bool {
+        let lines = yaml.split(separator: "\n", omittingEmptySubsequences: false)
+        var inTun = false
+        for line in lines {
+            let text = String(line)
+            if text == "tun:" {
+                inTun = true
+                continue
+            }
+            if inTun, !text.hasPrefix(" "), !text.hasPrefix("\t") {
+                return false
+            }
+            if inTun {
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed == "enable: true" {
+                    return true
+                }
+                if trimmed == "enable: false" {
+                    return false
+                }
+            }
+        }
+        return false
+    }
+
+    private static func configPayload(mode: String, tunEnabled: Bool) -> [String: Any] {
         [
             "port": 7890,
             "mixed-port": 7890,
             "mode": mode,
             "log-level": "info",
             "allow-lan": false,
-            "external-controller": "127.0.0.1:9090"
+            "external-controller": "127.0.0.1:9090",
+            "tun": ["enable": tunEnabled]
         ]
     }
 
@@ -231,6 +431,53 @@ final class MockMihomoURLProtocol: URLProtocol {
         }
 
         return ["proxies": proxies]
+    }
+
+    private static func rulesPayload(disabledRuleIndexes: Set<Int>) -> [String: Any] {
+        [
+            "rules": [
+                [
+                    "type": "DOMAIN-SUFFIX",
+                    "payload": "example.com",
+                    "proxy": "Proxy",
+                    "size": 0,
+                    "extra": [
+                        "disabled": disabledRuleIndexes.contains(0),
+                        "hitCount": 4,
+                        "missCount": 1,
+                        "hitAt": "2026-07-05T12:00:00+08:00",
+                        "missAt": "2026-07-05T11:59:00+08:00"
+                    ]
+                ],
+                [
+                    "type": "MATCH",
+                    "payload": "",
+                    "proxy": "DIRECT",
+                    "size": 0,
+                    "extra": [
+                        "disabled": disabledRuleIndexes.contains(1),
+                        "hitCount": 0,
+                        "missCount": 0
+                    ]
+                ]
+            ]
+        ]
+    }
+
+    private static func ruleProvidersPayload() -> [String: Any] {
+        [
+            "providers": [
+                "RejectSet": [
+                    "name": "RejectSet",
+                    "behavior": "domain",
+                    "vehicleType": "HTTP",
+                    "format": "yaml",
+                    "ruleCount": 12,
+                    "updatedAt": "2026-07-05T12:00:00+08:00",
+                    "path": "/tmp/reject.yaml"
+                ]
+            ]
+        ]
     }
 }
 

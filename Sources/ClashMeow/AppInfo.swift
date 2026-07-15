@@ -6,4 +6,9 @@ enum AppInfo {
             ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
             ?? "Clash Meow"
     }
+
+    static var version: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+            ?? "dev"
+    }
 }

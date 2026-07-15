@@ -10,11 +10,25 @@ DAEMON_DIR="${APP_BUNDLE}/Contents/Library/LaunchDaemons"
 RESOURCES_DIR="${APP_BUNDLE}/Contents/Resources"
 BUILD_DIR="${DERIVED_FILE_DIR}/helper-build"
 HELPER_BIN="${LAUNCH_SERVICES_DIR}/${HELPER_ID}"
-MIHOMO_BIN="${RESOURCES_DIR}/mihomo"
 HELPER_INFO="${BUILD_DIR}/${HELPER_ID}-Info.plist"
 APP_INFO="${APP_BUNDLE}/Contents/Info.plist"
 SIGN_ID="${EXPANDED_CODE_SIGN_IDENTITY:--}"
 CODE_SIGN_TIMESTAMP_MODE="${CLASH_MEOW_CODE_SIGN_TIMESTAMP:-timestamp}"
+REQUESTED_ARCHS="${ARCHS:-arm64 x86_64}"
+HELPER_ARCHS=()
+
+for arch in ${REQUESTED_ARCHS}; do
+  case "${arch}" in
+    arm64|x86_64)
+      HELPER_ARCHS+=("${arch}")
+      ;;
+  esac
+done
+
+if [[ ${#HELPER_ARCHS[@]} -eq 0 ]]; then
+  echo "error: ARCHS does not contain a supported helper architecture: ${REQUESTED_ARCHS}" >&2
+  exit 1
+fi
 
 mkdir -p "${LAUNCH_SERVICES_DIR}" "${DAEMON_DIR}" "${BUILD_DIR}"
 cp "${ROOT}/ClashMeowHelper/Info.plist" "${HELPER_INFO}"
@@ -28,7 +42,9 @@ SWIFT_SOURCES=(
 )
 
 build_helper_binary() {
-  for arch in arm64 x86_64; do
+  local arch
+  local helper_inputs=()
+  for arch in "${HELPER_ARCHS[@]}"; do
     xcrun swiftc \
       -target "${arch}-apple-macos14.0" \
       -O \
@@ -43,12 +59,14 @@ build_helper_binary() {
       -Xlinker __launchd_plist \
       -Xlinker "${DAEMON_DIR}/${HELPER_ID}.plist" \
       -o "${BUILD_DIR}/helper-${arch}"
+    helper_inputs+=("${BUILD_DIR}/helper-${arch}")
   done
 
-  xcrun lipo -create \
-    "${BUILD_DIR}/helper-arm64" \
-    "${BUILD_DIR}/helper-x86_64" \
-    -output "${BUILD_DIR}/${HELPER_ID}"
+  if [[ ${#helper_inputs[@]} -eq 1 ]]; then
+    cp "${helper_inputs[0]}" "${BUILD_DIR}/${HELPER_ID}"
+  else
+    xcrun lipo -create "${helper_inputs[@]}" -output "${BUILD_DIR}/${HELPER_ID}"
+  fi
 
   rm -rf "${HELPER_BIN}"
   cp "${BUILD_DIR}/${HELPER_ID}" "${HELPER_BIN}"
@@ -71,17 +89,17 @@ sign_path() {
 
 build_helper_binary
 sign_path "${HELPER_BIN}"
-if [ -f "${MIHOMO_BIN}" ]; then
-  chmod 755 "${MIHOMO_BIN}"
-  sign_path "${MIHOMO_BIN}"
-fi
+while IFS= read -r mihomo_bin; do
+  chmod 755 "${mihomo_bin}"
+  sign_path "${mihomo_bin}"
+done < <(find "${RESOURCES_DIR}/Mihomo" -type f -path "*/bin/mihomo" -print)
 
-python3 - "${HELPER_BIN}" "${HELPER_INFO}" "${APP_INFO}" "${HELPER_ID}" "${APP_ID}" <<'PY'
+python3 - "${HELPER_BIN}" "${HELPER_INFO}" "${APP_INFO}" "${HELPER_ID}" "${APP_ID}" "${SIGN_ID}" <<'PY'
 import plistlib
 import subprocess
 import sys
 
-helper_bin, helper_info, app_info, helper_id, app_id = sys.argv[1:6]
+helper_bin, helper_info, app_info, helper_id, app_id, sign_id = sys.argv[1:7]
 
 def designated_requirement(path: str) -> str:
     result = subprocess.run(
@@ -96,8 +114,12 @@ def designated_requirement(path: str) -> str:
         raise SystemExit(f"Cannot read designated requirement for {path}\n{output}")
     return output.split(marker, 1)[1].strip()
 
-helper_requirement = designated_requirement(helper_bin)
-app_requirement = helper_requirement.replace(f'identifier "{helper_id}"', f'identifier "{app_id}"', 1)
+if sign_id == "-" or not sign_id:
+    helper_requirement = f'identifier "{helper_id}"'
+    app_requirement = f'identifier "{app_id}"'
+else:
+    helper_requirement = designated_requirement(helper_bin)
+    app_requirement = helper_requirement.replace(f'identifier "{helper_id}"', f'identifier "{app_id}"', 1)
 
 with open(app_info, "rb") as handle:
     app_plist = plistlib.load(handle)

@@ -339,6 +339,14 @@ struct ProxyGroupItem: Identifiable, Equatable {
     let nodes: [ProxyGroupNode]
     let aliveCount: Int?
     let testURL: String?
+
+    var displayName: String {
+        YAMLScalarDecoder.decode(name)
+    }
+
+    var displayNow: String {
+        YAMLScalarDecoder.decode(now)
+    }
 }
 
 struct ProxyGroupNode: Identifiable, Equatable {
@@ -348,6 +356,10 @@ struct ProxyGroupNode: Identifiable, Equatable {
     let alive: Bool?
 
     var id: String { name }
+
+    var displayName: String {
+        YAMLScalarDecoder.decode(name)
+    }
 
     var typeText: String {
         guard let type, !type.isEmpty else { return "NODE" }
@@ -414,6 +426,10 @@ struct ProxyNodeInfo: Equatable, Identifiable {
 
     var id: String { name }
 
+    var displayName: String {
+        YAMLScalarDecoder.decode(name)
+    }
+
     var typeLabel: String {
         guard let type, !type.isEmpty else { return "NODE" }
         return type.uppercased()
@@ -464,6 +480,34 @@ struct ProxyHistory: Codable, Equatable {
     let delay: Int?
 }
 
+struct RuleProviderItem: Identifiable, Equatable {
+    let name: String
+    let behavior: String?
+    let vehicleType: String?
+    let format: String?
+    let ruleCount: Int?
+    let updatedAt: String?
+    let path: String?
+
+    var id: String { name }
+
+    var displayBehavior: String {
+        behavior?.isEmpty == false ? behavior! : "-"
+    }
+
+    var displayVehicleType: String {
+        vehicleType?.isEmpty == false ? vehicleType! : "-"
+    }
+
+    var displayFormat: String {
+        format?.isEmpty == false ? format! : "-"
+    }
+
+    var ruleCountText: String {
+        ruleCount.map { "\($0) 条" } ?? "-"
+    }
+}
+
 enum LogLevelFilter: String, CaseIterable, Identifiable {
     case all
     case error
@@ -488,17 +532,41 @@ enum LogLevelFilter: String, CaseIterable, Identifiable {
     }
 }
 
+enum LogSourceFilter: String, CaseIterable, Identifiable {
+    case core
+    case app
+    case all
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .core: "内核"
+        case .app: "应用"
+        case .all: "全部"
+        }
+    }
+}
+
 struct CoreLogEntry: Identifiable, Equatable, Sendable {
     let id: String
     let level: String
     let message: String
     let time: String?
+    let source: LogSourceFilter
 
-    init(id: String = UUID().uuidString, level: String = "info", message: String, time: String? = nil) {
+    init(
+        id: String = UUID().uuidString,
+        level: String = "info",
+        message: String,
+        time: String? = nil,
+        source: LogSourceFilter = .core
+    ) {
         self.id = id
         self.level = level
         self.message = message
         self.time = time
+        self.source = source
     }
 }
 
@@ -519,6 +587,14 @@ struct RuleItem: Identifiable, Equatable {
         let total = hitCount + missCount
         guard total > 0 else { return nil }
         return Double(hitCount) / Double(total)
+    }
+
+    var displayPayload: String {
+        payload.isEmpty ? "MATCH" : payload
+    }
+
+    var overrideRuleText: String {
+        payload.isEmpty ? "\(type),\(proxy)" : "\(type),\(payload),\(proxy)"
     }
 }
 
@@ -550,6 +626,7 @@ extension ProxyNodeInfo {
     static func parsed(from yaml: String) -> [ProxyNodeInfo] {
         var nodes: [ProxyNodeInfo] = []
         var isInsideTopLevelProxies = false
+        var proxyItemIndent: Int?
         var current: [String: String] = [:]
 
         func flushCurrentNode() {
@@ -572,33 +649,42 @@ extension ProxyNodeInfo {
             let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { continue }
             let isTopLevel = !rawLine.hasPrefix(" ") && !rawLine.hasPrefix("\t")
+            let indent = rawLine.leadingWhitespaceCount
 
             if isTopLevel {
                 if trimmed == "proxies:" {
                     isInsideTopLevelProxies = true
+                    proxyItemIndent = nil
                     continue
                 }
-                if isInsideTopLevelProxies {
+                if isInsideTopLevelProxies, !trimmed.hasPrefix("- ") {
                     break
                 }
             }
 
             guard isInsideTopLevelProxies else { continue }
 
-            if trimmed.hasPrefix("- {"), trimmed.hasSuffix("}") {
+            if trimmed.hasPrefix("- ") {
+                if proxyItemIndent == nil {
+                    proxyItemIndent = indent
+                }
+                guard indent == proxyItemIndent else { continue }
+            }
+
+            if indent == proxyItemIndent, trimmed.hasPrefix("- {"), trimmed.hasSuffix("}") {
                 flushCurrentNode()
                 current = MihomoInlineYAML.inlineMap(from: trimmed)
                 flushCurrentNode()
                 continue
             }
 
-            if trimmed.hasPrefix("- name:") {
+            if indent == proxyItemIndent, trimmed.hasPrefix("- name:") {
                 flushCurrentNode()
                 current["name"] = trimmed.yamlValue(after: "- name:")
                 continue
             }
 
-            if trimmed.hasPrefix("- ") {
+            if indent == proxyItemIndent, trimmed.hasPrefix("- ") {
                 flushCurrentNode()
                 current["name"] = trimmed.yamlValue(after: "- ")
                 continue
@@ -622,7 +708,10 @@ extension ProxyNodeInfo {
 extension ProxyGroupItem {
     static func parsed(from yaml: String) -> [ProxyGroupItem] {
         var groups: [ProxyGroupItem] = []
-        let nodeByName = Dictionary(uniqueKeysWithValues: ProxyNodeInfo.parsed(from: yaml).map { ($0.name, $0) })
+        let nodeByName = ProxyNodeInfo.parsed(from: yaml)
+            .reduce(into: [String: ProxyNodeInfo]()) { result, node in
+                result[node.name] = node
+            }
         var isInsideProxyGroups = false
         var currentName: String?
         var currentType: String?
@@ -657,13 +746,16 @@ extension ProxyGroupItem {
             guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { continue }
 
             if !rawLine.hasPrefix(" "), !rawLine.hasPrefix("\t") {
-                if isInsideProxyGroups, trimmed != "proxy-groups:" {
+                if isInsideProxyGroups, trimmed != "proxy-groups:", !trimmed.hasPrefix("- ") {
                     break
                 }
                 if trimmed == "proxy-groups:" {
                     isInsideProxyGroups = true
+                    continue
                 }
-                continue
+                if !isInsideProxyGroups {
+                    continue
+                }
             }
 
             guard isInsideProxyGroups else { continue }
@@ -738,11 +830,23 @@ extension ProxyGroupItem {
 }
 
 private extension String {
+    var leadingWhitespaceCount: Int {
+        prefix { $0 == " " || $0 == "\t" }
+            .reduce(0) { count, character in
+                count + (character == "\t" ? 4 : 1)
+            }
+    }
+
     func scalarValue(for key: String) -> String? {
         split(whereSeparator: \.isNewline)
             .lazy
-            .map { String($0).trimmingCharacters(in: .whitespaces) }
-            .first { $0.hasPrefix("\(key):") }?
+            .map(String.init)
+            .first { rawLine in
+                !rawLine.hasPrefix(" ")
+                    && !rawLine.hasPrefix("\t")
+                    && rawLine.trimmingCharacters(in: .whitespaces).hasPrefix("\(key):")
+            }?
+            .trimmingCharacters(in: .whitespaces)
             .yamlValue(after: "\(key):")
     }
 
@@ -763,11 +867,12 @@ private extension String {
         var values: [String] = []
         for rawLine in split(whereSeparator: \.isNewline).map(String.init) {
             let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("\(section):") {
+            let isTopLevel = !rawLine.hasPrefix(" ") && !rawLine.hasPrefix("\t")
+            if isTopLevel, trimmed.hasPrefix("\(section):") {
                 isInsideSection = true
                 continue
             }
-            if isInsideSection, !rawLine.hasPrefix(" "), !rawLine.hasPrefix("\t") {
+            if isInsideSection, isTopLevel {
                 break
             }
             if isInsideSection, trimmed.hasPrefix("\(key):") {
@@ -786,6 +891,7 @@ private extension String {
         let valueWithoutComment = rawValue.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? rawValue
         return valueWithoutComment
             .trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'")))
+            .decodedYAMLScalar
     }
 
     var yamlBoolValue: Bool? {
@@ -797,5 +903,11 @@ private extension String {
         default:
             nil
         }
+    }
+}
+
+private extension String {
+    var decodedYAMLScalar: String {
+        YAMLScalarDecoder.decode(self)
     }
 }

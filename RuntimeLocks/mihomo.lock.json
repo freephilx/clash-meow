@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "allowedDownloadHosts": [
+    "api.github.com",
+    "github.com",
+    "raw.githubusercontent.com"
+  ],
+  "deploymentTarget": "14.0",
+  "mihomo": {
+    "repository": "https://github.com/MetaCubeX/mihomo",
+    "tag": "v1.19.29",
+    "source": {
+      "url": "https://api.github.com/repos/MetaCubeX/mihomo/tarball/v1.19.29",
+      "sha256": "2726c746c661fd5e289758ce8ab67bd782922189bb8a05f7b6212b77e41c4dfd"
+    },
+    "artifacts": {
+      "arm64": {
+        "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.29/mihomo-darwin-arm64-v1.19.29.gz",
+        "sha256": "4dc25df9e899f14161911302a8ee5fc9e202ed9c976fc405bf82c50ff27466ca",
+        "executableSha256": "ec66e3e883bdc3fca06753784e324e08921e13239f8e945587cb1bfbf4c6b936",
+        "versionOutput": "Mihomo Meta v1.19.29 darwin arm64 with go1.26.5 Sat Jul 18 12:19:57 UTC 2026"
+      },
+      "x86_64": {
+        "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.29/mihomo-darwin-amd64-compatible-v1.19.29.gz",
+        "sha256": "b43980c9bbcf10911f264662a8be4fdf4c95f4567244d6824c3f5365bab0e7d9",
+        "executableSha256": "1b83bcab10da6a7d855314752badc9d38a54f3e7ce19b78d2ed5b317d3e4c0c2",
+        "versionOutput": "Mihomo Meta v1.19.29 darwin amd64 with go1.26.5 Sat Jul 18 12:20:04 UTC 2026"
+      }
+    }
+  },
+  "geoData": {
+    "version": "meta-rules-dat latest snapshot 2026-08-08",
+    "files": [
+      {
+        "name": "geoip.metadb",
+        "url": "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb",
+        "sha256": "67453e3341b683c1b643d027429b1eee24f1627e88874e1888febcc082793289"
+      }
+    ]
+  },
+  "licenses": [
+    {
+      "name": "Mihomo-GPL-3.0.txt",
+      "url": "https://raw.githubusercontent.com/MetaCubeX/mihomo/v1.19.29/LICENSE",
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    },
+    {
+      "name": "MetaCubeXD-MIT.txt",
+      "url": "https://raw.githubusercontent.com/MetaCubeX/metacubexd/v1.268.4/LICENSE",
+      "sha256": "cd0735ba06f26a0008bbca399890c7ca87fe129aacc302c2e33fb03e60a4e8c3"
+    }
+  ]
+}

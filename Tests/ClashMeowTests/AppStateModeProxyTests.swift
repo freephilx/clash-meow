@@ -53,6 +53,165 @@ struct AppStateModeProxyTests {
         #expect(!MockMihomoURLProtocolSupport.handledRequests.isEmpty)
     }
 
+    @Test func ruleToggleWritesProfileDeleteOverride() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "clash-meow-rule-override-\(UUID().uuidString)", directoryHint: .isDirectory)
+        AppPersistencePaths.configDirectoryOverrideForTesting = directory
+        defer {
+            AppPersistencePaths.configDirectoryOverrideForTesting = nil
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        MockMihomoURLProtocolSupport.reset()
+        let session = MihomoAPI.makeMockSession(protocolClass: MockMihomoURLProtocol.self)
+        var api = MihomoAPI(baseURL: URL(string: "http://127.0.0.1:9090")!)
+        api.urlSession = session
+
+        let profilesDirectory = directory.appending(path: "profiles", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: profilesDirectory, withIntermediateDirectories: true)
+        let profileID = "selected-profile"
+        let profileYAML = """
+        mixed-port: 7890
+        proxy-groups:
+          - name: Proxy
+            type: select
+            proxies:
+              - DIRECT
+        rules:
+          - DOMAIN-SUFFIX,example.com,Proxy
+          - MATCH,DIRECT
+        """
+        try profileYAML.write(
+            to: profilesDirectory.appending(path: "\(profileID).yaml"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let repository = ProfileRepository(
+            configDirectory: directory,
+            activeConfigFile: directory.appending(path: "config.yaml")
+        )
+        try repository.activateProfile(id: profileID)
+        let state = AppState()
+        state.useAPIForTesting(api)
+        state.core.applyDemoPresentation()
+        state.refreshProfiles()
+        let rule = RuleItem(
+            id: "0-DOMAIN-SUFFIX-example.com",
+            index: 0,
+            type: "DOMAIN-SUFFIX",
+            payload: "example.com",
+            proxy: "Proxy",
+            isEnabled: true,
+            hitCount: 0,
+            missCount: 0,
+            lastHit: nil,
+            lastMiss: nil,
+            size: 0
+        )
+
+        await state.setRule(rule, isEnabled: false)
+        let disabledOverrideYAML = try String(
+            contentsOf: profilesDirectory.appending(path: "\(profileID).rules.yaml"),
+            encoding: .utf8
+        )
+        let disabledRuntimeYAML = try String(contentsOf: directory.appending(path: "config.yaml"), encoding: .utf8)
+        #expect(disabledOverrideYAML.contains("delete:"))
+        #expect(disabledOverrideYAML.contains("DOMAIN-SUFFIX,example.com,Proxy"))
+        #expect(!disabledRuntimeYAML.contains("DOMAIN-SUFFIX,example.com,Proxy"))
+        #expect(MockMihomoURLProtocolSupport.handledRequests.contains { $0.method == "PATCH" && $0.path == "/rules/disable" })
+
+        await state.setRule(rule, isEnabled: true)
+        let enabledRuntimeYAML = try String(contentsOf: directory.appending(path: "config.yaml"), encoding: .utf8)
+        #expect(!FileManager.default.fileExists(atPath: profilesDirectory.appending(path: "\(profileID).rules.yaml").path))
+        #expect(enabledRuntimeYAML.contains("DOMAIN-SUFFIX,example.com,Proxy"))
+        #expect(MockMihomoURLProtocolSupport.handledRequests.filter { $0.method == "PATCH" && $0.path == "/rules/disable" }.count == 2)
+        #expect(!MockMihomoURLProtocolSupport.handledRequests.contains { $0.method == "PUT" && $0.path == "/configs" })
+    }
+
+    @Test func ruleToggleKeepsCurrentRulesWhenRuntimePatchAndReloadFail() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "clash-meow-rule-reload-fail-\(UUID().uuidString)", directoryHint: .isDirectory)
+        AppPersistencePaths.configDirectoryOverrideForTesting = directory
+        defer {
+            AppPersistencePaths.configDirectoryOverrideForTesting = nil
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        MockMihomoURLProtocolSupport.reset(reloadConfigShouldFail: true, ruleDisableShouldFail: true)
+        let session = MihomoAPI.makeMockSession(protocolClass: MockMihomoURLProtocol.self)
+        var api = MihomoAPI(baseURL: URL(string: "http://127.0.0.1:9090")!)
+        api.urlSession = session
+
+        let profilesDirectory = directory.appending(path: "profiles", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: profilesDirectory, withIntermediateDirectories: true)
+        let profileID = "selected-profile"
+        let profileYAML = """
+        mixed-port: 7890
+        proxy-groups:
+          - name: Proxy
+            type: select
+            proxies:
+              - DIRECT
+        rules:
+          - DOMAIN-SUFFIX,example.com,Proxy
+          - MATCH,DIRECT
+        """
+        try profileYAML.write(
+            to: profilesDirectory.appending(path: "\(profileID).yaml"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let repository = ProfileRepository(
+            configDirectory: directory,
+            activeConfigFile: directory.appending(path: "config.yaml")
+        )
+        try repository.activateProfile(id: profileID)
+        let state = AppState()
+        state.useAPIForTesting(api)
+        state.core.applyDemoPresentation()
+        state.refreshProfiles()
+        let rule = RuleItem(
+            id: "0-DOMAIN-SUFFIX-example.com",
+            index: 0,
+            type: "DOMAIN-SUFFIX",
+            payload: "example.com",
+            proxy: "Proxy",
+            isEnabled: true,
+            hitCount: 0,
+            missCount: 0,
+            lastHit: nil,
+            lastMiss: nil,
+            size: 0
+        )
+        state.rules = [rule]
+
+        await state.setRule(rule, isEnabled: false)
+
+        #expect(!state.rules.isEmpty)
+        #expect(state.rules.contains { $0.index == rule.index && $0.displayPayload == rule.displayPayload })
+        #expect(state.toast?.message == "规则已保存，热更新失败")
+        #expect(MockMihomoURLProtocolSupport.handledRequests.contains { $0.method == "PATCH" && $0.path == "/rules/disable" })
+        #expect(MockMihomoURLProtocolSupport.handledRequests.contains { $0.method == "PUT" && $0.path == "/configs" })
+    }
+
+    @Test func refreshRulesLoadsAndUpdatesRuleProviders() async throws {
+        let state = makeConfiguredState()
+
+        await state.refreshRules()
+
+        let provider = try #require(state.ruleProviders.first)
+        #expect(provider.name == "RejectSet")
+        #expect(provider.ruleCount == 12)
+
+        await state.updateAllRuleProviders()
+
+        #expect(MockMihomoURLProtocolSupport.handledRequests.contains {
+            $0.method == "PUT" && $0.path == "/providers/rules/RejectSet"
+        })
+    }
+
     @Test func overviewProxyNodesPrefersGlobalGroupNow() {
         let overview = AppState.makeOverviewProxyNodes(
             mode: .global,
@@ -170,6 +329,85 @@ struct AppStateModeProxyTests {
         #expect(state.visibleProxyGroups.isEmpty)
     }
 
+    @Test func runtimeProxyGroupsFollowConfiguredGroupOrder() {
+        let response = ProxiesResponse(proxies: [
+            "GLOBAL": ProxyNode(
+                name: "GLOBAL",
+                type: "Selector",
+                now: "Singapore-02",
+                all: Self.sampleNodes.map(\.name),
+                alive: nil,
+                hidden: nil,
+                testURL: nil,
+                history: nil
+            ),
+            "Auto": ProxyNode(
+                name: "Auto",
+                type: "Fallback",
+                now: "Singapore-02",
+                all: Self.sampleNodes.map(\.name),
+                alive: nil,
+                hidden: nil,
+                testURL: nil,
+                history: nil
+            ),
+            "DoriyaNetwork": ProxyNode(
+                name: "DoriyaNetwork",
+                type: "Selector",
+                now: "Tokyo-01",
+                all: Self.sampleNodes.map(\.name),
+                alive: nil,
+                hidden: nil,
+                testURL: nil,
+                history: nil
+            ),
+            "Tokyo-01": ProxyNode(name: "Tokyo-01", type: "VMess", now: nil, all: nil, alive: true, hidden: nil, testURL: nil, history: nil),
+            "Singapore-02": ProxyNode(name: "Singapore-02", type: "Trojan", now: nil, all: nil, alive: true, hidden: nil, testURL: nil, history: nil),
+            "Los Angeles-03": ProxyNode(name: "Los Angeles-03", type: "Shadowsocks", now: nil, all: nil, alive: true, hidden: nil, testURL: nil, history: nil)
+        ])
+
+        let configuredGroups = [
+            Self.sampleGroups(selected: "Tokyo-01")[1],
+            Self.sampleGroups(selected: "Tokyo-01")[2]
+        ]
+        let groups = AppState.makeProxyGroups(from: response, configuredGroups: configuredGroups)
+
+        #expect(groups.map(\.name) == ["DoriyaNetwork", "Auto", "GLOBAL"])
+        #expect(groups.first?.now == "Tokyo-01")
+    }
+
+    @Test func proxyPageRefreshUsesReachableControllerEvenWhenCoreStateIsStale() async {
+        MockMihomoURLProtocolSupport.reset(mode: "rule", globalNow: "Tokyo-01")
+        let session = MihomoAPI.makeMockSession(protocolClass: MockMihomoURLProtocol.self)
+        var api = MihomoAPI(baseURL: URL(string: "http://127.0.0.1:9090")!)
+        api.urlSession = session
+
+        let state = AppState()
+        state.useAPIForTesting(api)
+        state.forwardingMode = .rule
+        state.activeProfileProxyGroups = [
+            ProxyGroupItem(
+                id: "koyun",
+                name: "koyun",
+                type: "select",
+                now: "自动选择",
+                all: Self.sampleNodes.map(\.name),
+                nodes: [],
+                aliveCount: nil,
+                testURL: nil
+            )
+        ]
+
+        #expect(state.core.status == .stopped)
+        #expect(state.visibleProxyGroups.map(\.name) == ["koyun"])
+
+        await state.refreshProxyGroupsFromControllerIfAvailable()
+
+        #expect(MockMihomoURLProtocolSupport.handledRequests.contains(where: { $0.method == "GET" && $0.path == "/proxies" }))
+        #expect(state.proxyGroups.map(\.name) == ["GLOBAL", "Proxy"])
+        #expect(state.visibleProxyGroups.map(\.name) == ["Proxy"])
+    }
+
     @Test func visibleProxyGroupsFollowRuntimeControllerMode() {
         let state = makeConfiguredState(mode: "global", globalNow: "Tokyo-01")
         state.forwardingMode = .rule
@@ -188,6 +426,362 @@ struct AppStateModeProxyTests {
         #expect(state.visibleProxyGroups.first?.now == "Singapore-02")
         #expect(state.visibleProxyGroups.first?.all == Self.sampleNodes.map(\.name))
         #expect(state.overviewProxyNodes.first?.node.name == "Singapore-02")
+    }
+
+    @Test func savedSystemProxyPreferenceRestoresLastAppliedState() {
+        let originalPreference = SystemProxyPreference.isEnabled
+        defer { SystemProxyPreference.setEnabled(originalPreference) }
+
+        SystemProxyPreference.setEnabled(true)
+        let state = AppState()
+
+        #expect(state.toggles.first(where: { $0.id == "proxy" })?.isOn == true)
+        #expect(state.systemProxyEnabled == true)
+    }
+
+    @Test func enablingSystemProxyWhileCoreStoppedRollsBackPreference() {
+        let originalPreference = SystemProxyPreference.isEnabled
+        let originalUserPreference = SystemProxyUserPreference.isEnabled
+        defer {
+            SystemProxyPreference.setEnabled(originalPreference)
+            SystemProxyUserPreference.setEnabled(originalUserPreference)
+        }
+
+        SystemProxyPreference.setEnabled(false)
+        SystemProxyUserPreference.setEnabled(false)
+        let state = AppState()
+
+        state.setSystemProxyEnabled(true)
+
+        #expect(SystemProxyPreference.isEnabled == false)
+        #expect(SystemProxyUserPreference.isEnabled == false)
+        #expect(state.toggles.first(where: { $0.id == "proxy" })?.isOn == false)
+        #expect(state.systemProxyEnabled == false)
+        #expect(state.toast?.message == "请先启动内核")
+    }
+
+    @Test func enablingTunWhileCoreStoppedRollsBackPreference() {
+        let originalPreference = TunPreference.isEnabled
+        let originalUserPreference = TunUserPreference.isEnabled
+        defer {
+            TunPreference.setEnabled(originalPreference)
+            TunUserPreference.setEnabled(originalUserPreference)
+        }
+
+        TunPreference.setEnabled(false)
+        TunUserPreference.setEnabled(false)
+        let state = AppState()
+
+        state.setTunEnabled(true)
+
+        #expect(TunPreference.isEnabled == false)
+        #expect(TunUserPreference.isEnabled == false)
+        #expect(state.toggles.first(where: { $0.id == "tun" })?.isOn == false)
+        #expect(state.toast?.message == "请先启动内核")
+    }
+
+    @Test func overviewTunToggleWhileCoreStoppedRollsBackToOff() {
+        let originalPreference = TunPreference.isEnabled
+        let originalUserPreference = TunUserPreference.isEnabled
+        defer {
+            TunPreference.setEnabled(originalPreference)
+            TunUserPreference.setEnabled(originalUserPreference)
+        }
+
+        TunPreference.setEnabled(false)
+        TunUserPreference.setEnabled(false)
+        let state = AppState()
+        let tunToggle = state.toggles.first(where: { $0.id == "tun" })!
+
+        state.setToggle(tunToggle, isOn: true)
+
+        #expect(TunPreference.isEnabled == false)
+        #expect(TunUserPreference.isEnabled == false)
+        #expect(state.toggles.first(where: { $0.id == "tun" })?.isOn == false)
+        #expect(state.isTunEnabled == false)
+        #expect(state.toast?.message == "请先启动内核")
+    }
+
+    @Test func startupWithCoreDisabledClearsActualTunButKeepsUserIntent() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "clash-meow-startup-tun-disabled-core-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let originalCorePreference = CoreAutoStartManager.isEnabled
+        let originalPreference = TunPreference.isEnabled
+        let originalUserPreference = TunUserPreference.isEnabled
+        AppPersistencePaths.configDirectoryOverrideForTesting = directory
+        defer {
+            AppPersistencePaths.configDirectoryOverrideForTesting = nil
+            CoreAutoStartManager.setEnabled(originalCorePreference)
+            TunPreference.setEnabled(originalPreference)
+            TunUserPreference.setEnabled(originalUserPreference)
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let originalYAML = """
+        mixed-port: 7890
+        tun:
+          enable: false
+        proxy-groups:
+          - name: Proxy
+            type: select
+            proxies:
+              - DIRECT
+        rules:
+          - MATCH,DIRECT
+        """
+        try originalYAML.write(to: directory.appending(path: "config.yaml"), atomically: true, encoding: .utf8)
+        CoreAutoStartManager.setEnabled(false)
+        TunPreference.setEnabled(true)
+        TunUserPreference.setEnabled(true)
+        MockMihomoURLProtocolSupport.reset(tunEnabled: false)
+        let session = MihomoAPI.makeMockSession(protocolClass: MockMihomoURLProtocol.self)
+        var api = MihomoAPI(baseURL: URL(string: "http://127.0.0.1:9090")!)
+        api.urlSession = session
+
+        let state = AppState()
+        state.useAPIForTesting(api)
+
+        await state.bootstrap()
+
+        #expect(TunPreference.isEnabled == false)
+        #expect(TunUserPreference.isEnabled == true)
+        #expect(state.toggles.first(where: { $0.id == "tun" })?.isOn == false)
+        #expect(!MockMihomoURLProtocolSupport.handledRequests.contains(where: { $0.method == "PUT" && $0.path == "/configs" }))
+    }
+
+    @Test func enablingTunUsesHotReloadAndPersistsAfterRuntimeValidation() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "clash-meow-tun-hot-reload-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let originalPreference = TunPreference.isEnabled
+        let originalUserPreference = TunUserPreference.isEnabled
+        AppPersistencePaths.configDirectoryOverrideForTesting = directory
+        defer {
+            AppPersistencePaths.configDirectoryOverrideForTesting = nil
+            TunPreference.setEnabled(originalPreference)
+            TunUserPreference.setEnabled(originalUserPreference)
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let originalYAML = """
+        mixed-port: 7890
+        tun:
+          enable: false
+        proxy-groups:
+          - name: Proxy
+            type: select
+            proxies:
+              - DIRECT
+        rules:
+          - MATCH,DIRECT
+        """
+        try originalYAML.write(to: directory.appending(path: "config.yaml"), atomically: true, encoding: .utf8)
+        TunPreference.setEnabled(false)
+        TunUserPreference.setEnabled(false)
+        MockMihomoURLProtocolSupport.reset(tunEnabled: false)
+        let session = MihomoAPI.makeMockSession(protocolClass: MockMihomoURLProtocol.self)
+        var api = MihomoAPI(baseURL: URL(string: "http://127.0.0.1:9090")!)
+        api.urlSession = session
+
+        let state = AppState()
+        state.useAPIForTesting(api)
+        state.core.applyDemoPresentation()
+        var didRestart = false
+        state.setTunRestartForTesting {
+            didRestart = true
+        }
+
+        state.setTunEnabled(true)
+        try await Task.sleep(for: .milliseconds(200))
+
+        let updatedYAML = try String(contentsOf: directory.appending(path: "config.yaml"), encoding: .utf8)
+        #expect(updatedYAML.contains("enable: true"))
+        #expect(TunPreference.isEnabled == true)
+        #expect(TunUserPreference.isEnabled == true)
+        #expect(state.toggles.first(where: { $0.id == "tun" })?.isOn == true)
+        #expect(didRestart == false)
+        #expect(MockMihomoURLProtocolSupport.handledRequests.contains(where: { $0.method == "PUT" && $0.path == "/configs" }))
+        #expect(MockMihomoURLProtocolSupport.handledRequests.contains(where: { $0.method == "GET" && $0.path == "/configs" }))
+    }
+
+    @Test func rapidTunToggleWhileApplyingDoesNotStartSecondUpdate() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "clash-meow-tun-single-flight-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let originalPreference = TunPreference.isEnabled
+        let originalUserPreference = TunUserPreference.isEnabled
+        AppPersistencePaths.configDirectoryOverrideForTesting = directory
+        defer {
+            AppPersistencePaths.configDirectoryOverrideForTesting = nil
+            TunPreference.setEnabled(originalPreference)
+            TunUserPreference.setEnabled(originalUserPreference)
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let originalYAML = """
+        mixed-port: 7890
+        tun:
+          enable: false
+        proxy-groups:
+          - name: Proxy
+            type: select
+            proxies:
+              - DIRECT
+        rules:
+          - MATCH,DIRECT
+        """
+        try originalYAML.write(to: directory.appending(path: "config.yaml"), atomically: true, encoding: .utf8)
+        TunPreference.setEnabled(false)
+        TunUserPreference.setEnabled(false)
+        MockMihomoURLProtocolSupport.reset(tunEnabled: false)
+        let session = MihomoAPI.makeMockSession(protocolClass: MockMihomoURLProtocol.self)
+        var api = MihomoAPI(baseURL: URL(string: "http://127.0.0.1:9090")!)
+        api.urlSession = session
+
+        let state = AppState()
+        state.useAPIForTesting(api)
+        state.core.applyDemoPresentation()
+
+        state.setTunEnabled(true)
+        #expect(state.isApplyingTunUpdate == true)
+        state.setTunEnabled(false)
+        try await Task.sleep(for: .milliseconds(200))
+
+        #expect(TunPreference.isEnabled == true)
+        #expect(TunUserPreference.isEnabled == true)
+        #expect(state.toggles.first(where: { $0.id == "tun" })?.isOn == true)
+        #expect(MockMihomoURLProtocolSupport.handledRequests.filter { $0.method == "PUT" && $0.path == "/configs" }.count == 1)
+    }
+
+    @Test func enablingTunFallbackRestartWaitsForControllerReadiness() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "clash-meow-tun-restart-ready-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let originalPreference = TunPreference.isEnabled
+        let originalUserPreference = TunUserPreference.isEnabled
+        AppPersistencePaths.configDirectoryOverrideForTesting = directory
+        defer {
+            AppPersistencePaths.configDirectoryOverrideForTesting = nil
+            TunPreference.setEnabled(originalPreference)
+            TunUserPreference.setEnabled(originalUserPreference)
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let originalYAML = """
+        mixed-port: 7890
+        tun:
+          enable: false
+        proxy-groups:
+          - name: Proxy
+            type: select
+            proxies:
+              - DIRECT
+        rules:
+          - MATCH,DIRECT
+        """
+        try originalYAML.write(to: directory.appending(path: "config.yaml"), atomically: true, encoding: .utf8)
+        TunPreference.setEnabled(false)
+        TunUserPreference.setEnabled(false)
+        MockMihomoURLProtocolSupport.reset(
+            tunEnabled: false,
+            reloadConfigShouldFail: true,
+            versionFailureCount: 2
+        )
+        let session = MihomoAPI.makeMockSession(protocolClass: MockMihomoURLProtocol.self)
+        var api = MihomoAPI(baseURL: URL(string: "http://127.0.0.1:9090")!)
+        api.urlSession = session
+
+        let state = AppState()
+        state.useAPIForTesting(api)
+        state.core.applyDemoPresentation()
+        var didRestart = false
+        state.setTunRestartForTesting {
+            didRestart = true
+            MockMihomoURLProtocolSupport.setRuntimeTunEnabled(true)
+        }
+
+        state.setTunEnabled(true)
+        try await Task.sleep(for: .milliseconds(600))
+
+        #expect(didRestart == true)
+        #expect(TunPreference.isEnabled == true)
+        #expect(TunUserPreference.isEnabled == true)
+        #expect(state.toggles.first(where: { $0.id == "tun" })?.isOn == true)
+        #expect(MockMihomoURLProtocolSupport.handledRequests.filter { $0.method == "GET" && $0.path == "/version" }.count >= 3)
+        #expect(MockMihomoURLProtocolSupport.handledRequests.contains(where: { $0.method == "GET" && $0.path == "/configs" }))
+    }
+
+    @Test func enablingTunRollsBackWhenCoreRestartFails() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "clash-meow-tun-rollback-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let originalPreference = TunPreference.isEnabled
+        let originalUserPreference = TunUserPreference.isEnabled
+        AppPersistencePaths.configDirectoryOverrideForTesting = directory
+        defer {
+            AppPersistencePaths.configDirectoryOverrideForTesting = nil
+            TunPreference.setEnabled(originalPreference)
+            TunUserPreference.setEnabled(originalUserPreference)
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let originalYAML = """
+        mixed-port: 7890
+        tun:
+          enable: false
+        proxy-groups:
+          - name: Proxy
+            type: select
+            proxies:
+              - DIRECT
+        rules:
+          - MATCH,DIRECT
+        """
+        try originalYAML.write(to: directory.appending(path: "config.yaml"), atomically: true, encoding: .utf8)
+        TunPreference.setEnabled(false)
+        TunUserPreference.setEnabled(false)
+        MockMihomoURLProtocolSupport.reset(tunEnabled: false, reloadConfigShouldFail: true)
+        let session = MihomoAPI.makeMockSession(protocolClass: MockMihomoURLProtocol.self)
+        var api = MihomoAPI(baseURL: URL(string: "http://127.0.0.1:9090")!)
+        api.urlSession = session
+
+        let state = AppState()
+        state.useAPIForTesting(api)
+        state.core.applyDemoPresentation()
+        state.setTunRestartForTesting {
+            throw NSError(domain: "ClashMeowTests", code: 1)
+        }
+
+        state.setTunEnabled(true)
+        try await Task.sleep(for: .milliseconds(100))
+
+        let restoredYAML = try String(contentsOf: directory.appending(path: "config.yaml"), encoding: .utf8)
+        #expect(restoredYAML == originalYAML)
+        #expect(TunPreference.isEnabled == false)
+        #expect(TunUserPreference.isEnabled == false)
+        #expect(state.toggles.first(where: { $0.id == "tun" })?.isOn == false)
+        #expect(state.toast?.message == "TUN 设置失败")
+        #expect(MockMihomoURLProtocolSupport.handledRequests.contains(where: { $0.method == "PUT" && $0.path == "/configs" }))
+    }
+
+    @Test func dashboardDemoRespectsPersistedCoreSwitch() {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "clash-meow-settings-\(UUID().uuidString)", directoryHint: .isDirectory)
+        AppPreferenceStore.configDirectoryOverrideForTesting = directory
+        defer {
+            AppPreferenceStore.configDirectoryOverrideForTesting = nil
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        CoreAutoStartManager.setEnabled(false)
+        let state = AppState()
+
+        state.applyDashboardDemo()
+
+        #expect(state.core.status == .stopped)
+        #expect(state.toggles.first(where: { $0.id == "proxy" })?.isOn == false)
+        #expect(state.toggles.first(where: { $0.id == "tun" })?.isOn == false)
     }
 
     @Test func setForwardingModeUpdatesMockControllerAndConfig() async throws {
@@ -215,6 +809,57 @@ struct AppStateModeProxyTests {
         #expect(MockMihomoURLProtocolSupport.handledRequests.contains(where: { request in
             request.method == "GET" && request.path.contains("/group/GLOBAL/delay")
         }))
+    }
+
+    @Test func testDelayFallsBackToProxyDelayAndKeepsPreviousDelayOnRequestFailure() async throws {
+        MockMihomoURLProtocolSupport.reset(
+            groupDelayShouldFail: true,
+            proxyDelayResults: [
+                "Tokyo-01": 91,
+                "Singapore-02": 0
+            ]
+        )
+        let session = MihomoAPI.makeMockSession(protocolClass: MockMihomoURLProtocol.self)
+        var api = MihomoAPI(baseURL: URL(string: "http://127.0.0.1:9090")!)
+        api.urlSession = session
+
+        let state = AppState()
+        state.useAPIForTesting(api)
+        state.core.applyDemoPresentation()
+        state.proxyGroups = Self.sampleGroups(selected: "Tokyo-01")
+
+        await state.testDelay(for: state.proxyGroups[0])
+
+        let group = try #require(state.proxyGroups.first(where: { $0.id == "GLOBAL" }))
+        let nodesByName = Dictionary(uniqueKeysWithValues: group.nodes.map { ($0.name, $0) })
+        #expect(nodesByName["Tokyo-01"]?.delay == 91)
+        #expect(nodesByName["Tokyo-01"]?.alive == true)
+        #expect(nodesByName["Singapore-02"]?.delay == 0)
+        #expect(nodesByName["Singapore-02"]?.alive == false)
+        #expect(nodesByName["Los Angeles-03"]?.delay == 50)
+        #expect(nodesByName["Los Angeles-03"]?.alive == true)
+        #expect(MockMihomoURLProtocolSupport.handledRequests.contains(where: { request in
+            request.method == "GET" && request.path.contains("/group/GLOBAL/delay")
+        }))
+        #expect(MockMihomoURLProtocolSupport.handledRequests.filter { request in
+            request.method == "GET" && request.path.contains("/proxies/") && request.path.hasSuffix("/delay")
+        }.count == 3)
+    }
+
+    @Test func testDelayWhileCoreStoppedShowsToastWithoutRequest() async throws {
+        MockMihomoURLProtocolSupport.reset()
+        let session = MihomoAPI.makeMockSession(protocolClass: MockMihomoURLProtocol.self)
+        var api = MihomoAPI(baseURL: URL(string: "http://127.0.0.1:9090")!)
+        api.urlSession = session
+
+        let state = AppState()
+        state.useAPIForTesting(api)
+        state.proxyGroups = Self.sampleGroups(selected: "Tokyo-01")
+
+        await state.testDelay(for: state.proxyGroups[0])
+
+        #expect(state.toast?.message == "请先启动内核，再测试代理延迟")
+        #expect(MockMihomoURLProtocolSupport.handledRequests.isEmpty)
     }
 
     @Test func setForwardingModeLogsFailureWhenControllerRejectsPatch() async throws {

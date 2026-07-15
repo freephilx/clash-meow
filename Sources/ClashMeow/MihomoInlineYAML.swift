@@ -1,5 +1,99 @@
 import Foundation
 
+enum YAMLScalarDecoder {
+    static func decode(_ value: String) -> String {
+        guard value.contains("\\") else { return value }
+
+        var output = ""
+        var index = value.startIndex
+        while index < value.endIndex {
+            let character = value[index]
+            guard character == "\\" else {
+                output.append(character)
+                index = value.index(after: index)
+                continue
+            }
+
+            let escapeIndex = value.index(after: index)
+            guard escapeIndex < value.endIndex else {
+                output.append(character)
+                index = escapeIndex
+                continue
+            }
+
+            let escape = value[escapeIndex]
+            switch escape {
+            case "0":
+                output.append("\0")
+                index = value.index(after: escapeIndex)
+            case "a":
+                output.append("\u{7}")
+                index = value.index(after: escapeIndex)
+            case "b":
+                output.append("\u{8}")
+                index = value.index(after: escapeIndex)
+            case "t":
+                output.append("\t")
+                index = value.index(after: escapeIndex)
+            case "n":
+                output.append("\n")
+                index = value.index(after: escapeIndex)
+            case "v":
+                output.append("\u{B}")
+                index = value.index(after: escapeIndex)
+            case "f":
+                output.append("\u{C}")
+                index = value.index(after: escapeIndex)
+            case "r":
+                output.append("\r")
+                index = value.index(after: escapeIndex)
+            case "e":
+                output.append("\u{1B}")
+                index = value.index(after: escapeIndex)
+            case "\"", "'", "\\", "/":
+                output.append(escape)
+                index = value.index(after: escapeIndex)
+            case "x":
+                index = appendUnicodeEscape(from: value, after: escapeIndex, length: 2, to: &output)
+                    ?? value.index(after: index)
+            case "u":
+                index = appendUnicodeEscape(from: value, after: escapeIndex, length: 4, to: &output)
+                    ?? value.index(after: index)
+            case "U":
+                index = appendUnicodeEscape(from: value, after: escapeIndex, length: 8, to: &output)
+                    ?? value.index(after: index)
+            default:
+                output.append(character)
+                output.append(escape)
+                index = value.index(after: escapeIndex)
+            }
+        }
+
+        return output
+    }
+
+    private static func appendUnicodeEscape(
+        from value: String,
+        after escapeIndex: String.Index,
+        length: Int,
+        to output: inout String
+    ) -> String.Index? {
+        let hexStart = value.index(after: escapeIndex)
+        var hexEnd = hexStart
+        for _ in 0..<length {
+            guard hexEnd < value.endIndex, value[hexEnd].isHexDigit else { return nil }
+            hexEnd = value.index(after: hexEnd)
+        }
+
+        guard let scalarValue = UInt32(value[hexStart..<hexEnd], radix: 16),
+              let scalar = UnicodeScalar(scalarValue) else {
+            return nil
+        }
+        output.append(Character(scalar))
+        return hexEnd
+    }
+}
+
 enum MihomoInlineYAML {
     static func inlineMap(from line: String) -> [String: String] {
         guard let body = inlineMapBody(from: line) else { return [:] }
@@ -111,6 +205,9 @@ enum MihomoInlineYAML {
         if !preserveArray || !(scalar.hasPrefix("[") && scalar.hasSuffix("]")) {
             scalar = scalar.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
         }
-        return scalar
+        guard !preserveArray || !(scalar.hasPrefix("[") && scalar.hasSuffix("]")) else {
+            return scalar
+        }
+        return YAMLScalarDecoder.decode(scalar)
     }
 }

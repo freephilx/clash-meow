@@ -10,9 +10,16 @@ let package = Package(
     products: [
         .executable(name: "ClashMeow", targets: ["ClashMeow"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/jpsim/Yams.git", from: "5.1.0")
+    ],
     targets: [
         .executableTarget(
             name: "ClashMeow",
+            dependencies: [
+                "Yams"
+            ],
+            exclude: ["Info.plist"],
             resources: [
                 .process("Resources")
             ]

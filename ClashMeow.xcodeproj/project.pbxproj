@@ -14,7 +14,7 @@
 		5A0000052E10800100000001 /* MihomoCoreManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0000152E10800100000001 /* MihomoCoreManager.swift */; };
 		5A0000062E10800100000001 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0000162E10800100000001 /* Models.swift */; };
 		5A0000072E10800100000001 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0000172E10800100000001 /* RootView.swift */; };
-		5A0000082E10800100000001 /* mihomo in Resources */ = {isa = PBXBuildFile; fileRef = 5A0000182E10800100000001 /* mihomo */; };
+		5A0000082E10800100000001 /* Mihomo in Resources */ = {isa = PBXBuildFile; fileRef = 5A0000182E10800100000001 /* Mihomo */; };
 		5A0000092E10800100000001 /* sampleConfig.yaml in Resources */ = {isa = PBXBuildFile; fileRef = 5A0000192E10800100000001 /* sampleConfig.yaml */; };
 		5A00000A2E10800100000001 /* AppInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A00001A2E10800100000001 /* AppInfo.swift */; };
 		5A00000B2E10800100000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5A00001B2E10800100000001 /* Assets.xcassets */; };
@@ -38,6 +38,10 @@
 		5A0000412E10800100000001 /* HelperXPCProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0000442E10800100000001 /* HelperXPCProtocol.swift */; };
 		5A0000422E10800100000001 /* PrivilegedHelperConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0000452E10800100000001 /* PrivilegedHelperConstants.swift */; };
 		5A0000432E10800100000001 /* PrivilegedHelperManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0000462E10800100000001 /* PrivilegedHelperManager.swift */; };
+		5A0000492E10800100000001 /* InternetLatencyDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0000482E10800100000001 /* InternetLatencyDiagnostics.swift */; };
+		5A0A0A012E10800100000001 /* AppLogSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0A0A022E10800100000001 /* AppLogSupport.swift */; };
+		5A0B0B012E10800100000001 /* RuntimeConfigBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0B0B022E10800100000001 /* RuntimeConfigBuilder.swift */; };
+		5A0B0B052E10800100000001 /* Yams in Frameworks */ = {isa = PBXBuildFile; productRef = 5A0B0B042E10800100000001 /* Yams */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -49,7 +53,7 @@
 		5A0000152E10800100000001 /* MihomoCoreManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MihomoCoreManager.swift; sourceTree = "<group>"; };
 		5A0000162E10800100000001 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		5A0000172E10800100000001 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
-		5A0000182E10800100000001 /* mihomo */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; path = mihomo; sourceTree = "<group>"; };
+		5A0000182E10800100000001 /* Mihomo */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Mihomo; sourceTree = "<group>"; };
 		5A0000192E10800100000001 /* sampleConfig.yaml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = sampleConfig.yaml; sourceTree = "<group>"; };
 		5A00001A2E10800100000001 /* AppInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppInfo.swift; sourceTree = "<group>"; };
 		5A00001B2E10800100000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -73,6 +77,9 @@
 		5A0000442E10800100000001 /* HelperXPCProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperXPCProtocol.swift; sourceTree = "<group>"; };
 		5A0000452E10800100000001 /* PrivilegedHelperConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivilegedHelperConstants.swift; sourceTree = "<group>"; };
 		5A0000462E10800100000001 /* PrivilegedHelperManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivilegedHelperManager.swift; sourceTree = "<group>"; };
+		5A0000482E10800100000001 /* InternetLatencyDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InternetLatencyDiagnostics.swift; sourceTree = "<group>"; };
+		5A0A0A022E10800100000001 /* AppLogSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogSupport.swift; sourceTree = "<group>"; };
+		5A0B0B022E10800100000001 /* RuntimeConfigBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeConfigBuilder.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -80,6 +87,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5A0B0B052E10800100000001 /* Yams in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -106,11 +114,13 @@
 				5A00001D2E10800100000001 /* ClashMeowAppContext.swift */,
 				5A00001E2E10800100000001 /* ClashMeowAppDelegate.swift */,
 				5A00001F2E10800100000001 /* ClashMeowStatusItemController.swift */,
+				5A0A0A022E10800100000001 /* AppLogSupport.swift */,
 				5A0000132E10800100000001 /* ClashMeowApp.swift */,
 				5A0000142E10800100000001 /* MihomoAPI.swift */,
 				5A0000152E10800100000001 /* MihomoCoreManager.swift */,
 				5A0000162E10800100000001 /* Models.swift */,
 				5A00001C2E10800100000001 /* ProfileRepository.swift */,
+				5A0B0B022E10800100000001 /* RuntimeConfigBuilder.swift */,
 				5A0000172E10800100000001 /* RootView.swift */,
 				5A0000222E10800100000001 /* YAMLFileChangeMonitor.swift */,
 				5A0000242E10800100000001 /* SettingsView.swift */,
@@ -120,6 +130,7 @@
 				5A00002C2E10800100000001 /* SubscriptionDocumentNormalizer.swift */,
 				5A00002E2E10800100000001 /* CoreLogSupport.swift */,
 				5A0000342E10800100000001 /* SystemProxyController.swift */,
+				5A0000482E10800100000001 /* InternetLatencyDiagnostics.swift */,
 				5A0000352E10800100000001 /* MihomoYAMLSettings.swift */,
 				5A0000382E10800100000001 /* TrafficSample.swift */,
 				5A00003A2E10800100000001 /* DashboardDemoMode.swift */,
@@ -141,7 +152,7 @@
 		5A0000332E10800100000001 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				5A0000182E10800100000001 /* mihomo */,
+				5A0000182E10800100000001 /* Mihomo */,
 				5A0000192E10800100000001 /* sampleConfig.yaml */,
 				5A00001B2E10800100000001 /* Assets.xcassets */,
 			);
@@ -158,6 +169,7 @@
 				5A0000502E10800100000001 /* Sources */,
 				5A0000202E10800100000001 /* Frameworks */,
 				5A0000602E10800100000001 /* Resources */,
+				5A00004A2E10800100000001 /* Stage Mihomo Runtime */,
 				5A0000472E10800100000001 /* Build Privileged Helper */,
 			);
 			buildRules = (
@@ -165,6 +177,9 @@
 			dependencies = (
 			);
 			name = ClashMeow;
+			packageProductDependencies = (
+				5A0B0B042E10800100000001 /* Yams */,
+			);
 			productName = ClashMeow;
 			productReference = 5A0000102E10800100000001 /* Clash Meow.app */;
 			productType = "com.apple.product-type.application";
@@ -194,6 +209,9 @@
 			);
 			mainGroup = 5A0000302E10800100000001;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				5A0B0B032E10800100000001 /* XCRemoteSwiftPackageReference "Yams" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 5A0000322E10800100000001 /* Products */;
 			projectDirPath = "";
@@ -209,7 +227,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				5A0000082E10800100000001 /* mihomo in Resources */,
+				5A0000082E10800100000001 /* Mihomo in Resources */,
 				5A0000092E10800100000001 /* sampleConfig.yaml in Resources */,
 				5A00000B2E10800100000001 /* Assets.xcassets in Resources */,
 			);
@@ -218,6 +236,29 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		5A00004A2E10800100000001 /* Stage Mihomo Runtime */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/RuntimeLocks/mihomo.lock.json",
+				"$(SRCROOT)/scripts/mihomo-runtime.py",
+				"$(SRCROOT)/scripts/stage-mihomo-runtime.sh",
+			);
+			name = "Stage Mihomo Runtime";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Mihomo/MANIFEST.json",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "\"${SRCROOT}/scripts/stage-mihomo-runtime.sh\"\n";
+		};
 		5A0000472E10800100000001 /* Build Privileged Helper */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -261,11 +302,13 @@
 				5A00000D2E10800100000001 /* ClashMeowAppContext.swift in Sources */,
 				5A00000E2E10800100000001 /* ClashMeowAppDelegate.swift in Sources */,
 				5A00000F2E10800100000001 /* ClashMeowStatusItemController.swift in Sources */,
+				5A0A0A012E10800100000001 /* AppLogSupport.swift in Sources */,
 				5A0000032E10800100000001 /* ClashMeowApp.swift in Sources */,
 				5A0000042E10800100000001 /* MihomoAPI.swift in Sources */,
 				5A0000052E10800100000001 /* MihomoCoreManager.swift in Sources */,
 				5A0000062E10800100000001 /* Models.swift in Sources */,
 				5A00000C2E10800100000001 /* ProfileRepository.swift in Sources */,
+				5A0B0B012E10800100000001 /* RuntimeConfigBuilder.swift in Sources */,
 				5A0000072E10800100000001 /* RootView.swift in Sources */,
 				5A0000212E10800100000001 /* YAMLFileChangeMonitor.swift in Sources */,
 				5A0000232E10800100000001 /* SettingsView.swift in Sources */,
@@ -275,6 +318,7 @@
 				5A00002B2E10800100000001 /* SubscriptionDocumentNormalizer.swift in Sources */,
 				5A00002D2E10800100000001 /* CoreLogSupport.swift in Sources */,
 				5A0000362E10800100000001 /* SystemProxyController.swift in Sources */,
+				5A0000492E10800100000001 /* InternetLatencyDiagnostics.swift in Sources */,
 				5A0000372E10800100000001 /* MihomoYAMLSettings.swift in Sources */,
 				5A0000392E10800100000001 /* TrafficSample.swift in Sources */,
 				5A00003B2E10800100000001 /* DashboardDemoMode.swift in Sources */,
@@ -411,11 +455,8 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Clash Meow";
-				INFOPLIST_KEY_CFBundleName = "Clash Meow";
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
-				INFOPLIST_KEY_NSHighResolutionCapable = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Sources/ClashMeow/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -435,15 +476,14 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = KD976452UD;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Clash Meow";
-				INFOPLIST_KEY_CFBundleName = "Clash Meow";
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
-				INFOPLIST_KEY_NSHighResolutionCapable = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Sources/ClashMeow/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -479,6 +519,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		5A0B0B032E10800100000001 /* XCRemoteSwiftPackageReference "Yams" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/jpsim/Yams.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.1.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		5A0B0B042E10800100000001 /* Yams */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5A0B0B032E10800100000001 /* XCRemoteSwiftPackageReference "Yams" */;
+			productName = Yams;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 5A0000702E10800100000001 /* Project object */;
 }
