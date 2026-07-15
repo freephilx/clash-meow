@@ -41,6 +41,8 @@ struct ClashMeowApp: App {
             SettingsView()
                 .environmentObject(appState)
         }
+        .defaultSize(width: 640, height: 720)
+        .windowResizability(.contentMinSize)
     }
 }
 

@@ -5,6 +5,7 @@ struct MihomoAPI {
     var secret = ""
     var urlSession: URLSession = MihomoAPI.makeDefaultSession()
     private static let defaultDelayTestURL = "https://www.gstatic.com/generate_204"
+    static let fallbackProxyDelayTimeoutMs = 5_000
     private static func makeDefaultSession() -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.connectionProxyDictionary = [:]
@@ -71,25 +72,37 @@ struct MihomoAPI {
 
     func rules() async throws -> [RuleItem] {
         let root = try await getJSONObject("rules")
-        let rules = root["rules"] as? [[String: Any]] ?? []
-        return rules.enumerated().map { index, rule in
-            let extra = rule["extra"] as? [String: Any] ?? [:]
-            let type = rule["type"] as? String ?? "-"
-            let payload = rule["payload"] as? String ?? ""
-            return RuleItem(
-                id: "\(index)-\(type)-\(payload)",
-                index: index,
-                type: type,
-                payload: payload,
-                proxy: rule["proxy"] as? String ?? "-",
-                isEnabled: !(extra["disabled"] as? Bool ?? false),
-                hitCount: Self.intValue(extra["hitCount"]) ?? 0,
-                missCount: Self.intValue(extra["missCount"]) ?? 0,
-                lastHit: extra["hitAt"] as? String,
-                lastMiss: extra["missAt"] as? String,
-                size: Self.intValue(rule["size"]) ?? Self.intValue(extra["size"]) ?? 0
+        if let rules = root["rules"] as? [[String: Any]] {
+            return rules.enumerated().map { index, rule in
+                Self.ruleItem(from: rule, index: index)
+            }
+        }
+        if let rules = root["rules"] as? [String: Any] {
+            return rules.compactMap { key, value in
+                guard let rule = value as? [String: Any], let index = Int(key) else { return nil }
+                return Self.ruleItem(from: rule, index: index)
+            }
+            .sorted { $0.index < $1.index }
+        }
+        return []
+    }
+
+    func ruleProviders() async throws -> [RuleProviderItem] {
+        let root = try await getJSONObject("providers/rules")
+        let providers = root["providers"] as? [String: Any] ?? [:]
+        return providers.compactMap { name, value in
+            guard let object = value as? [String: Any] else { return nil }
+            return RuleProviderItem(
+                name: object["name"] as? String ?? name,
+                behavior: object["behavior"] as? String,
+                vehicleType: object["vehicleType"] as? String ?? object["type"] as? String,
+                format: object["format"] as? String,
+                ruleCount: Self.intValue(object["ruleCount"]) ?? Self.intValue(object["size"]),
+                updatedAt: object["updatedAt"] as? String ?? object["updated"] as? String,
+                path: object["path"] as? String
             )
         }
+        .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
     func updateMode(_ mode: MihomoMode) async throws {
@@ -98,6 +111,26 @@ struct MihomoAPI {
 
     func updateAllowLan(_ isEnabled: Bool) async throws {
         try await patchConfigs(["allow-lan": EncodableValue(isEnabled)])
+    }
+
+    func reloadConfig(path: URL) async throws {
+        var components = URLComponents(url: baseURL.appending(path: "configs"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "force", value: "true")]
+        var request = URLRequest(url: components.url!)
+        request.httpMethod = "PUT"
+        request.timeoutInterval = 8
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if !secret.isEmpty {
+            request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+        }
+        request.httpBody = try JSONEncoder().encode(["path": path.path])
+        let requestToSend = request
+        let (_, response) = try await withTimeout(seconds: 8) {
+            try await urlSession.data(for: requestToSend)
+        }
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
     }
 
     func selectProxy(groupName: String, proxyName: String) async throws {
@@ -172,6 +205,10 @@ struct MihomoAPI {
             baseURL.appending(path: "rules").appending(path: "disable"),
             payload: [String(index): !isEnabled]
         )
+    }
+
+    func updateRuleProvider(name: String) async throws {
+        try await sendEmpty(controllerURL(pathComponents: ["providers", "rules", name]), method: "PUT")
     }
 
     func closeConnection(id: String) async throws {
@@ -267,13 +304,6 @@ struct MihomoAPI {
             }
         }
         return receivedAtLeastOne
-    }
-
-    private func streamWebSocket(
-        request: URLRequest,
-        parser: @escaping @Sendable (String) -> CoreLogEntry?
-    ) -> AsyncThrowingStream<CoreLogEntry, Error> {
-        streamWebSocket(request: request, parser: parser)
     }
 
     private func patchConfigs(_ payload: [String: EncodableValue]) async throws {
@@ -387,7 +417,7 @@ struct MihomoAPI {
             id: object["id"] as? String ?? UUID().uuidString,
             level: CoreLogSupport.normalizedLevel(level),
             message: message,
-            time: object["time"] as? String
+            time: LogTimeSupport.displayString(from: object["time"] as? String)
         )
     }
 
@@ -396,6 +426,25 @@ struct MihomoAPI {
         if let double = value as? Double { return Int(double) }
         if let string = value as? String { return Int(string) }
         return nil
+    }
+
+    private static func ruleItem(from rule: [String: Any], index: Int) -> RuleItem {
+        let extra = rule["extra"] as? [String: Any] ?? [:]
+        let type = rule["type"] as? String ?? "-"
+        let payload = rule["payload"] as? String ?? ""
+        return RuleItem(
+            id: "\(index)-\(type)-\(payload)",
+            index: index,
+            type: type,
+            payload: payload,
+            proxy: rule["proxy"] as? String ?? "-",
+            isEnabled: !(extra["disabled"] as? Bool ?? false),
+            hitCount: Self.intValue(extra["hitCount"]) ?? 0,
+            missCount: Self.intValue(extra["missCount"]) ?? 0,
+            lastHit: extra["hitAt"] as? String,
+            lastMiss: extra["missAt"] as? String,
+            size: Self.intValue(rule["size"]) ?? Self.intValue(extra["size"]) ?? 0
+        )
     }
 
     func controllerURL(pathComponents: [String], queryItems: [URLQueryItem] = []) -> URL {

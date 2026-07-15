@@ -48,89 +48,22 @@ enum DashboardDemoMode {
 }
 
 enum DashboardDemoData {
-    static let mockProfileID = "debug-mock-overview"
-    static let mockProfileName = "Clash Meow"
-    static let mockSubscriptionUserInfo = SubscriptionUserInfo(
-        upload: 0,
-        download: 520 * 1_024 * 1_024 * 1_024,
-        total: 1_000 * 1_024 * 1_024 * 1_024,
-        expire: nil
-    )
-
-    static let mockProfileYAML = """
-    mixed-port: 7890
-    allow-lan: true
-    mode: rule
-    log-level: info
-    ipv6: false
-    find-process-mode: always
-    external-controller: 127.0.0.1:9090
-    secret: ""
-
-    tun:
-      enable: true
-      stack: system
-      device: utun10
-
-    proxies:
-      - name: Tokyo-01
-        type: vmess
-        server: jp.example.com
-        port: 443
-      - name: Singapore-02
-        type: trojan
-        server: sg.example.com
-        port: 443
-      - name: Los Angeles-03
-        type: ss
-        server: us.example.com
-        port: 8388
-      - name: Hong Kong-04
-        type: hysteria2
-        server: hk.example.com
-        port: 443
-
-    proxy-groups:
-      - name: Proxy
-        type: select
-        proxies:
-          - Tokyo-01
-          - Singapore-02
-          - Los Angeles-03
-          - Hong Kong-04
-          - DIRECT
-      - name: GLOBAL
-        type: select
-        proxies:
-          - Tokyo-01
-          - Singapore-02
-          - Los Angeles-03
-          - Hong Kong-04
-          - DIRECT
-
-    rules:
-      - DOMAIN-SUFFIX,apple.com,DIRECT
-      - DOMAIN-SUFFIX,openai.com,Proxy
-      - GEOIP,CN,DIRECT
-      - MATCH,Proxy
-    """
-
     @MainActor
-    static func apply(to state: AppState) {
-        state.core.applyDemoPresentation()
+    static func apply(to state: AppState, coreEnabled: Bool = true) {
+        state.core.applyDemoPresentation(isRunning: coreEnabled)
 
         state.version = MihomoVersion(version: "1.19.0", premium: true, meta: true)
         state.config = demoConfig
         state.activeProfileConfig = demoConfig
         state.forwardingMode = .rule
         state.allowLan = true
-        state.setDemoPresentationFlags(systemProxyEnabled: true)
+        state.setDemoPresentationFlags(systemProxyEnabled: coreEnabled)
 
         state.toggles = [
             .init(id: "dns", title: "DNS", subtitle: "DNS 解析与 nameserver 配置状态。", systemImage: "network", isOn: true),
             .init(id: "allowLan", title: "允许局域网访问", subtitle: "允许局域网设备连接本机混合端口。", systemImage: "rectangle.connected.to.line.below", isOn: true),
-            .init(id: "proxy", title: "系统代理", subtitle: "将系统网络设置指向本机混合端口。", systemImage: "globe", isOn: true),
-            .init(id: "tun", title: "TUN", subtitle: "系统栈、自动路由与虚拟网卡。", systemImage: "antenna.radiowaves.left.and.right", isOn: true)
+            .init(id: "proxy", title: "系统代理", subtitle: "将系统网络设置指向本机混合端口。", systemImage: "globe", isOn: coreEnabled),
+            .init(id: "tun", title: "TUN", subtitle: "系统栈、自动路由与虚拟网卡。", systemImage: "antenna.radiowaves.left.and.right", isOn: coreEnabled)
         ]
 
         state.traffic = TrafficSnapshot(

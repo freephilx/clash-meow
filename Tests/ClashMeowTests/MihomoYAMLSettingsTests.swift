@@ -3,24 +3,169 @@ import Testing
 @testable import ClashMeow
 
 struct MihomoYAMLSettingsTests {
-    @Test func setTunEnabledUpdatesExistingSection() {
+    @Test func setTunEnabledUpdatesExistingSection() throws {
         let yaml = """
         mixed-port: 7890
         tun:
           enable: false
           stack: system
         """
-        let updated = MihomoYAMLSettings.setTunEnabled(true, in: yaml)
+        let updated = try MihomoYAMLSettings.setTunEnabled(true, in: yaml)
         #expect(updated.contains("enable: true"))
         #expect(!updated.contains("enable: false"))
     }
 
-    @Test func setTunEnabledAppendsSectionWhenMissing() {
+    @Test func setTunEnabledAppendsSectionWhenMissing() throws {
         let yaml = "mixed-port: 7890"
-        let updated = MihomoYAMLSettings.setTunEnabled(true, in: yaml)
+        let updated = try MihomoYAMLSettings.setTunEnabled(true, in: yaml)
         #expect(updated.contains("tun:"))
         #expect(updated.contains("enable: true"))
         #expect(updated.contains("dns-hijack:"))
+    }
+
+    @Test func runtimeBuilderRemovesProfileControlledKeysAndAppendsAppSettings() throws {
+        let profileYAML = """
+        mixed-port: 6666
+        external-controller: 0.0.0.0:1111
+        allow-lan: true
+        tun:
+          enable: false
+        proxies: []
+        rules:
+          - MATCH,DIRECT
+        """
+
+        let runtimeYAML = try RuntimeConfigBuilder.build(
+            profileYAML: profileYAML,
+            settings: RuntimeConfigSettings(
+                mixedPort: 7890,
+                externalController: "127.0.0.1:9090",
+                secret: "",
+                mode: .global,
+                allowLan: false,
+                logLevel: "info",
+                tunEnabled: true
+            )
+        )
+
+        #expect(runtimeYAML.contains("mixed-port: 7890"))
+        #expect(runtimeYAML.contains("external-controller: 127.0.0.1:9090"))
+        #expect(runtimeYAML.contains("mode: global"))
+        #expect(runtimeYAML.contains("allow-lan: false"))
+        #expect(runtimeYAML.contains("enable: true"))
+        #expect(!runtimeYAML.contains("mixed-port: 6666"))
+        #expect(!runtimeYAML.contains("0.0.0.0:1111"))
+    }
+
+    @Test func runtimeBuilderInheritsProfileMixedPortWhenAppSettingIsMissing() throws {
+        let profileYAML = """
+        mixed-port: 7891
+        proxies: []
+        rules:
+          - MATCH,DIRECT
+        """
+
+        let runtimeYAML = try RuntimeConfigBuilder.build(profileYAML: profileYAML)
+
+        #expect(runtimeYAML.contains("mixed-port: 7891"))
+        #expect(!runtimeYAML.contains("mixed-port: 7890"))
+    }
+
+    @Test func runtimeBuilderAppliesRuleOverrides() throws {
+        let profileYAML = """
+        mixed-port: 7891
+        rules:
+          - DOMAIN-SUFFIX,old.example.com,DIRECT
+          - MATCH,DIRECT
+        """
+
+        let runtimeYAML = try RuntimeConfigBuilder.build(
+            profileYAML: profileYAML,
+            ruleOverrides: RuleOverrideSet(
+                prepend: ["DOMAIN-SUFFIX,example.com,Proxy"],
+                append: ["DOMAIN-SUFFIX,tail.example.com,DIRECT"],
+                delete: [
+                    "DOMAIN-SUFFIX,old.example.com,DIRECT",
+                    "DOMAIN-SUFFIX,tail.example.com,DIRECT"
+                ]
+            )
+        )
+
+        #expect(runtimeYAML.contains("DOMAIN-SUFFIX,example.com,Proxy"))
+        #expect(!runtimeYAML.contains("DOMAIN-SUFFIX,tail.example.com,DIRECT"))
+        #expect(!runtimeYAML.contains("DOMAIN-SUFFIX,old.example.com,DIRECT"))
+        let prependIndex = try #require(runtimeYAML.range(of: "DOMAIN-SUFFIX,example.com,Proxy")?.lowerBound)
+        let matchIndex = try #require(runtimeYAML.range(of: "MATCH,DIRECT")?.lowerBound)
+        #expect(prependIndex < matchIndex)
+    }
+
+    @Test func ruleOverrideAddClearsMatchingDelete() throws {
+        var overrides = RuleOverrideSet(delete: ["DOMAIN-SUFFIX,example.com,Proxy"])
+
+        overrides.add("DOMAIN-SUFFIX,example.com,Proxy", placement: .prepend)
+
+        #expect(overrides.prepend == ["DOMAIN-SUFFIX,example.com,Proxy"])
+        #expect(overrides.delete.isEmpty)
+    }
+
+    @Test func ruleOverrideDraftBuildsStructuredRuleText() {
+        let domainRule = RuleOverrideDraft(
+            type: "DOMAIN-SUFFIX",
+            payload: "example.com",
+            proxy: "Proxy"
+        )
+        let matchRule = RuleOverrideDraft(type: "MATCH", proxy: "DIRECT")
+        let cidrRule = RuleOverrideDraft(
+            type: "IP-CIDR",
+            payload: "8.8.8.0/24",
+            proxy: "Proxy",
+            noResolve: true,
+            source: true
+        )
+
+        #expect(domainRule.ruleText == "DOMAIN-SUFFIX,example.com,Proxy")
+        #expect(matchRule.ruleText == "MATCH,DIRECT")
+        #expect(cidrRule.ruleText == "IP-CIDR,8.8.8.0/24,Proxy,no-resolve,src")
+        #expect(domainRule.isValid)
+        #expect(matchRule.isValid)
+    }
+
+    @Test func ruleOverrideDraftClearsUnsupportedOptionsWhenTypeChanges() {
+        var draft = RuleOverrideDraft(
+            type: "IP-CIDR",
+            payload: "8.8.8.0/24",
+            proxy: "Proxy",
+            noResolve: true,
+            source: true
+        )
+
+        draft.type = "DOMAIN"
+        draft.normalizeForSelectedType()
+
+        #expect(!draft.noResolve)
+        #expect(!draft.source)
+    }
+
+    @Test func runtimeBuilderKeepsUnicodeNodeNamesReadable() throws {
+        let profileYAML = """
+        proxies:
+          - name: "[vless]剩余流量：75.04 GB"
+            type: vless
+            server: 199.15.77.250
+            port: 443
+        proxy-groups:
+          - name: 自动选择
+            type: select
+            proxies:
+              - "[vless]剩余流量：75.04 GB"
+        """
+
+        let runtimeYAML = try RuntimeConfigBuilder.build(profileYAML: profileYAML)
+
+        #expect(runtimeYAML.contains("[vless]剩余流量：75.04 GB"))
+        #expect(runtimeYAML.contains("自动选择"))
+        #expect(!runtimeYAML.contains("\\u5269"))
+        #expect(!runtimeYAML.contains("\\U0001F"))
     }
 
     @Test func networkServiceParsesActiveInterface() throws {
@@ -49,6 +194,20 @@ struct MihomoYAMLSettingsTests {
         """
 
         #expect(MihomoConfig.listeningPorts(from: yaml) == [53, 7890, 7891, 7892, 7893, 7894, 9090])
+    }
+
+    @Test func listeningPortsIgnoreProxyNodePorts() {
+        let yaml = """
+        mixed-port: 7891
+        external-controller: 127.0.0.1:9090
+        proxies:
+          - name: tls-node
+            type: vless
+            server: example.com
+            port: 443
+        """
+
+        #expect(MihomoConfig.listeningPorts(from: yaml) == [7891, 9090])
     }
 
     @Test func listeningPortsParseURLAndIPv6StyleHosts() {

@@ -25,8 +25,8 @@ private extension Color {
 
 private enum SidebarDestination: String, CaseIterable, Identifiable {
     case overview = "概览"
-    case profiles = "配置文件"
-    case proxies = "节点"
+    case profiles = "配置"
+    case proxies = "代理"
     case connections = "连接"
     case logs = "日志"
     case rules = "规则"
@@ -57,7 +57,7 @@ struct RootView: View {
 
     private let sidebarGroups = [
         SidebarGroup(id: "daily", title: "常用", destinations: [.overview, .profiles, .proxies]),
-        SidebarGroup(id: "inspect", title: "检查", destinations: [.connections, .logs])
+        SidebarGroup(id: "inspect", title: "检查", destinations: [.connections, .rules, .logs])
     ]
 
     var body: some View {
@@ -290,13 +290,13 @@ private struct ProxiesContent: View {
     @State private var expandedGroups = Set<String>()
 
     var body: some View {
-        PageScaffold(title: "节点") {
+        PageScaffold(title: "代理") {
             Group {
                 if state.visibleProxyGroups.isEmpty {
                     ContentUnavailableView {
-                        Label(state.effectiveForwardingMode == .direct ? "直连模式" : "暂无节点组", systemImage: "point.3.connected.trianglepath.dotted")
+                        Label(state.effectiveForwardingMode == .direct ? "直连模式" : "暂无代理组", systemImage: "point.3.connected.trianglepath.dotted")
                     } description: {
-                        Text(state.effectiveForwardingMode == .direct ? "当前模式不展示代理组。" : (state.core.status.isHealthy ? "当前配置没有可选择的节点组。" : "启动内核或导入包含节点组的配置。"))
+                        Text(state.effectiveForwardingMode == .direct ? "当前模式不展示代理组。" : (state.core.status.isHealthy ? "当前配置没有可选择的代理组。" : "启动内核或导入包含代理组的配置。"))
                     } actions: {
                         if state.effectiveForwardingMode != .direct {
                             Button("刷新") {
@@ -321,7 +321,9 @@ private struct ProxiesContent: View {
         }
         .onAppear {
             expandInitialGroupsIfNeeded()
-            Task { await state.refresh() }
+            Task {
+                await state.refreshProxyGroupsFromControllerIfAvailable()
+            }
         }
         .onChange(of: state.visibleProxyGroups.map(\.id)) {
             expandInitialGroupsIfNeeded()
@@ -393,6 +395,7 @@ private struct ProxyGroupCard: View {
             Button("测速") {
                 Task { await state.testDelay(for: group) }
             }
+            .disabled(state.isTestingDelay)
         }
     }
 
@@ -402,7 +405,7 @@ private struct ProxyGroupCard: View {
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
-                            Text(group.name)
+                            Text(group.displayName)
                                 .font(.system(size: 20, weight: .semibold))
                                 .foregroundStyle(ClashMeowPalette.ink)
                                 .lineLimit(1)
@@ -413,7 +416,7 @@ private struct ProxyGroupCard: View {
                                 .padding(.vertical, 3)
                                 .background(Color(hex: 0xF0F2F7), in: Capsule())
                         }
-                        Text(group.now)
+                        Text(group.displayNow)
                             .font(.system(size: 14, weight: .medium))
                             .foregroundStyle(ClashMeowPalette.muted)
                             .lineLimit(1)
@@ -430,7 +433,7 @@ private struct ProxyGroupCard: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("\(group.name)，当前 \(group.now)")
+            .accessibilityLabel("\(group.displayName)，当前 \(group.displayNow)")
 
             Button {
                 Task { await state.testDelay(for: group) }
@@ -447,8 +450,8 @@ private struct ProxyGroupCard: View {
                 }
             }
             .buttonStyle(.plain)
-            .disabled(!state.core.status.isHealthy || state.isTestingDelay)
-            .help("测试该节点组延迟")
+            .disabled(state.isTestingDelay)
+            .help("测试该代理组延迟")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
@@ -483,7 +486,7 @@ private struct ProxyCard: View {
         Button(action: action) {
             HStack(alignment: .center, spacing: 9) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(node.name)
+                    Text(node.displayName)
                         .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
                         .foregroundStyle(ClashMeowPalette.ink)
                         .lineLimit(1)
@@ -513,8 +516,8 @@ private struct ProxyCard: View {
             .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain)
-        .help(isSelected ? "当前节点" : "切换到 \(node.name)")
-        .accessibilityLabel(node.name)
+        .help(isSelected ? "当前代理" : "切换到 \(node.displayName)")
+        .accessibilityLabel(node.displayName)
         .accessibilityValue(accessibilityValue)
     }
 
@@ -716,51 +719,87 @@ private struct ConnectionRow: View {
 private struct LogsContent: View {
     @EnvironmentObject private var state: AppState
     @State private var searchText = ""
-    @State private var level: LogLevelFilter = .all
+    @State private var level: LogLevelFilter = LogPreference.defaultLevel
+    @State private var source: LogSourceFilter = LogPreference.defaultSource
+    @State private var confirmsClearingFile = false
+
+    private let sourceFilters: [LogSourceFilter] = [.all, .core, .app]
 
     private var filteredLogs: [CoreLogEntry] {
         state.logs.filter { log in
             let matchesLevel = level == .all || log.normalizedLevel == level.rawValue
+            let matchesSource = source == .all || log.source == source
             let matchesSearch = searchText.isEmpty
                 || log.message.localizedCaseInsensitiveContains(searchText)
                 || log.level.localizedCaseInsensitiveContains(searchText)
-            return matchesLevel && matchesSearch
+                || log.source.title.localizedCaseInsensitiveContains(searchText)
+            return matchesLevel && matchesSource && matchesSearch
         }
     }
 
     var body: some View {
         PageScaffold(title: "日志") {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    Picker("级别", selection: $level) {
-                        ForEach(LogLevelFilter.allCases) { level in
-                            Text(level.title).tag(level)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(maxWidth: 420)
-
                     TextField("搜索日志", text: $searchText)
                         .textFieldStyle(.roundedBorder)
 
-                    Button {
+                    Button("刷新") {
+                        state.loadLogs(source: source)
+                    }
+                }
+
+                RuleOptionRow {
+                    ForEach(sourceFilters) { item in
+                        RuleOptionButton(
+                            title: item.title,
+                            isSelected: source == item,
+                            color: ClashMeowPalette.purple
+                        ) {
+                            source = item
+                        }
+                    }
+                }
+
+                RuleOptionRow {
+                    ForEach(LogLevelFilter.allCases) { item in
+                        RuleOptionButton(
+                            title: item.title,
+                            isSelected: level == item,
+                            color: ClashMeowPalette.purple
+                        ) {
+                            level = item
+                        }
+                    }
+                }
+
+                RuleOptionRow {
+                    LogActionButton(title: state.isStreamingLogs ? "暂停" : "跟随") {
                         if state.isStreamingLogs {
                             state.stopLogStream()
                         } else {
                             state.startLogStream(level: level)
                         }
-                    } label: {
-                        Label(state.isStreamingLogs ? "暂停" : "跟随", systemImage: state.isStreamingLogs ? "pause.circle" : "dot.radiowaves.left.and.right")
                     }
                     .disabled(!state.core.status.isHealthy)
 
-                    Button("清空") {
+                    LogActionButton(title: "清空") {
                         state.clearLogs()
                     }
                     .disabled(state.logs.isEmpty)
 
-                    Button("刷新") {
-                        state.loadLogs()
+                    LogActionButton(title: "打开文件") {
+                        state.openLogFile(source: source)
+                    }
+
+                    LogActionButton(title: "在 Finder 中显示") {
+                        state.revealLogFile(source: source)
+                    }
+
+                    if LogPreference.allowsDestructiveFileActions {
+                        LogActionButton(title: "清空文件") {
+                            confirmsClearingFile = true
+                        }
                     }
                 }
 
@@ -775,7 +814,7 @@ private struct LogsContent: View {
                         )
                     } actions: {
                         Button("刷新") {
-                            state.loadLogs()
+                            state.loadLogs(source: source)
                         }
                     }
                     .frame(maxWidth: .infinity, minHeight: 320)
@@ -797,12 +836,25 @@ private struct LogsContent: View {
             }
         }
         .task {
-            state.loadLogs()
+            state.loadLogs(source: source)
+        }
+        .alert("清空日志文件？", isPresented: $confirmsClearingFile) {
+            Button("取消", role: .cancel) {}
+            Button("清空", role: .destructive) {
+                state.clearLogFile(source: source)
+            }
+        } message: {
+            Text("这会清空当前来源对应的持久日志文件，重启后也无法恢复。")
         }
         .onChange(of: level) { _, newLevel in
+            LogPreference.defaultLevel = newLevel
             if state.isStreamingLogs {
                 state.startLogStream(level: newLevel)
             }
+        }
+        .onChange(of: source) { _, newSource in
+            LogPreference.defaultSource = newSource
+            state.loadLogs(source: newSource)
         }
     }
 
@@ -813,11 +865,33 @@ private struct LogsContent: View {
     }
 }
 
+private struct LogActionButton: View {
+    let title: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(ClashMeowPalette.ink.opacity(0.76))
+                .lineLimit(1)
+                .padding(.horizontal, 14)
+                .frame(height: 32)
+                .background(Color(hex: 0xE7ECF3), in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 private struct CoreLogRow: View {
     let log: CoreLogEntry
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
+            Text(log.source.title)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundStyle(ClashMeowPalette.muted)
+                .frame(width: 42, alignment: .leading)
             Text(log.level.uppercased())
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 .foregroundStyle(levelColor)
@@ -883,64 +957,637 @@ private struct LogLineCard: View {
 private struct RulesContent: View {
     @EnvironmentObject private var state: AppState
     @State private var searchText = ""
+    @State private var selectedTab: RuleRuntimeTab = .rules
+    @State private var sortOrder: RuleSortOrder = .natural
+    @State private var typeFilters = Set<String>()
+    @State private var policyFilters = Set<String>()
+    @State private var isAddingRuleOverride = false
+    private let leadingOptionWidth: CGFloat = 78
 
     private var filteredRules: [RuleItem] {
-        guard !searchText.isEmpty else { return state.rules }
-        return state.rules.filter {
-            $0.type.localizedCaseInsensitiveContains(searchText)
-                || $0.payload.localizedCaseInsensitiveContains(searchText)
-                || $0.proxy.localizedCaseInsensitiveContains(searchText)
+        let searched = state.rules.filter { rule in
+            let matchesSearch = searchText.isEmpty
+                || rule.type.localizedCaseInsensitiveContains(searchText)
+                || rule.payload.localizedCaseInsensitiveContains(searchText)
+                || rule.proxy.localizedCaseInsensitiveContains(searchText)
+            let matchesType = typeFilters.isEmpty || typeFilters.contains(rule.type)
+            let matchesPolicy = policyFilters.isEmpty || policyFilters.contains(rule.proxy)
+            return matchesSearch && matchesType && matchesPolicy
         }
+        return sortOrder.sort(searched)
+    }
+
+    private var filteredRuleProviders: [RuleProviderItem] {
+        guard !searchText.isEmpty else { return state.ruleProviders }
+        return state.ruleProviders.filter {
+            $0.name.localizedCaseInsensitiveContains(searchText)
+                || ($0.behavior?.localizedCaseInsensitiveContains(searchText) ?? false)
+                || ($0.vehicleType?.localizedCaseInsensitiveContains(searchText) ?? false)
+        }
+    }
+
+    private var typeFacets: [(value: String, count: Int)] {
+        facets(for: state.rules.map(\.type))
+    }
+
+    private var policyFacets: [(value: String, count: Int)] {
+        facets(for: state.rules.map(\.proxy))
+    }
+
+    private var hasActiveFilters: Bool {
+        !searchText.isEmpty || !typeFilters.isEmpty || !policyFilters.isEmpty
     }
 
     var body: some View {
         PageScaffold(title: "规则") {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 8) {
-                    Picker("模式", selection: Binding {
-                        state.forwardingMode
-                    } set: { mode in
-                        state.setForwardingMode(mode)
-                    }) {
-                        ForEach(MihomoMode.allCases) { mode in
-                            Text(mode.title).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 240)
-
-                    TextField("搜索规则", text: $searchText)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    TextField(selectedTab == .rules ? "搜索规则" : "搜索规则集合", text: $searchText)
                         .textFieldStyle(.roundedBorder)
 
                     Button {
-                        Task { await state.refresh() }
+                        Task { await state.refreshRules() }
                     } label: {
                         Label("刷新", systemImage: "arrow.clockwise")
                     }
+
+                    Button {
+                        isAddingRuleOverride = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .help("添加规则")
+                    .accessibilityLabel("添加规则")
+
+                    if selectedTab == .ruleProviders {
+                        Button {
+                            Task { await state.updateAllRuleProviders() }
+                        } label: {
+                            Label("全部更新", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                        .disabled(state.ruleProviders.isEmpty || !state.core.status.isHealthy || !state.updatingRuleProviderNames.isEmpty)
+                    }
                 }
 
-                if filteredRules.isEmpty {
-                    ContentUnavailableView {
-                        Label(searchText.isEmpty ? "暂无规则" : "没有匹配规则", systemImage: "list.bullet.rectangle")
-                    } description: {
-                        Text(searchText.isEmpty ? (state.core.status.isHealthy ? "controller 暂未返回规则。" : "启动内核后可读取运行时规则。") : "换一个关键词试试。")
-                    } actions: {
-                        Button("刷新") {
-                            Task { await state.refresh() }
+                HStack(spacing: 10) {
+                    RuleOptionRow {
+                        ForEach(RuleRuntimeTab.allCases) { tab in
+                            RuleOptionButton(
+                                title: "\(tab.title) \(tab.count(rules: state.rules, providers: state.ruleProviders))",
+                                isSelected: selectedTab == tab,
+                                color: ClashMeowPalette.purple
+                            ) {
+                                selectedTab = tab
+                            }
                         }
                     }
-                    .frame(maxWidth: .infinity, minHeight: 240)
+                }
 
-                    YAMLRulesSummaryCard()
+                if selectedTab == .rules {
+                    rulesToolbar
+
+                    if filteredRules.isEmpty {
+                        ContentUnavailableView {
+                            Label(hasActiveFilters ? "没有匹配规则" : "暂无规则", systemImage: "list.bullet.rectangle")
+                        } description: {
+                            Text(hasActiveFilters ? "清除筛选或换一个关键词。" : (state.core.status.isHealthy ? "controller 暂未返回规则。" : "启动内核后可读取运行时规则。"))
+                        } actions: {
+                            Button(hasActiveFilters ? "清除筛选" : "刷新") {
+                                if hasActiveFilters {
+                                    clearFilters()
+                                } else {
+                                    Task { await state.refreshRules() }
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 240)
+
+                    } else {
+                        LazyVStack(spacing: 8) {
+                            ForEach(filteredRules) { rule in
+                                RuleRow(rule: rule)
+                            }
+                        }
+                    }
                 } else {
-                    LazyVStack(spacing: 8) {
-                        ForEach(filteredRules) { rule in
-                            RuleRow(rule: rule)
+                    if filteredRuleProviders.isEmpty {
+                        ContentUnavailableView {
+                            Label(searchText.isEmpty ? "暂无规则集合" : "没有匹配规则集合", systemImage: "tray.full")
+                        } description: {
+                            Text(searchText.isEmpty ? "当前配置没有 rule-providers，或 controller 暂未返回规则集合。" : "换一个关键词试试。")
+                        } actions: {
+                            Button("刷新") {
+                                Task { await state.refreshRules() }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 240)
+                    } else {
+                        LazyVStack(spacing: 8) {
+                            ForEach(filteredRuleProviders) { provider in
+                                RuleProviderRow(provider: provider)
+                            }
                         }
                     }
                 }
             }
         }
+        .task {
+            await state.refreshRules()
+        }
+        .sheet(isPresented: $isAddingRuleOverride) {
+            AddRuleOverrideView()
+                .environmentObject(state)
+        }
+    }
+
+    private var rulesToolbar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                RuleOptionRow {
+                    ForEach(RuleSortOrder.allCases) { order in
+                        RuleOptionButton(
+                            title: order.title,
+                            isSelected: sortOrder == order,
+                            color: ClashMeowPalette.purple,
+                            width: order == .natural ? leadingOptionWidth : nil
+                        ) {
+                            sortOrder = order
+                        }
+                    }
+                }
+
+                Text("\(filteredRules.count) / \(state.rules.count) 条规则")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(ClashMeowPalette.muted)
+
+                Spacer()
+
+                if hasActiveFilters {
+                    Button {
+                        clearFilters()
+                    } label: {
+                        Text("清除筛选")
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(ClashMeowPalette.purple)
+                    .padding(.horizontal, 12)
+                    .frame(height: 32)
+                    .background(ClashMeowPalette.purple.opacity(0.10), in: Capsule())
+                }
+            }
+
+            RuleFacetStrip(
+                facets: typeFacets,
+                selectedValues: typeFilters,
+                color: ClashMeowPalette.purple,
+                leadingWidth: leadingOptionWidth
+            ) { value in
+                toggle(value, in: &typeFilters)
+            } clear: {
+                typeFilters.removeAll()
+            }
+
+            RuleFacetStrip(
+                facets: policyFacets,
+                selectedValues: policyFilters,
+                color: ClashMeowPalette.purple,
+                leadingWidth: leadingOptionWidth
+            ) { value in
+                toggle(value, in: &policyFilters)
+            } clear: {
+                policyFilters.removeAll()
+            }
+        }
+    }
+
+    private func clearFilters() {
+        searchText = ""
+        typeFilters.removeAll()
+        policyFilters.removeAll()
+    }
+
+    private func facets(for values: [String]) -> [(value: String, count: Int)] {
+        let counts = values.reduce(into: [String: Int]()) { result, value in
+            result[value, default: 0] += 1
+        }
+        return counts
+            .map { (value: $0.key, count: $0.value) }
+            .sorted {
+                if $0.count != $1.count { return $0.count > $1.count }
+                return $0.value.localizedStandardCompare($1.value) == .orderedAscending
+            }
+    }
+
+    private func toggle(_ value: String, in set: inout Set<String>) {
+        if set.contains(value) {
+            set.remove(value)
+        } else {
+            set.insert(value)
+        }
+    }
+}
+
+struct AddRuleOverrideView: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var state: AppState
+    @State private var draft = RuleOverrideDraft()
+    @State private var placement: RuleOverridePlacement = .prepend
+
+    private var proxyOptions: [String] {
+        let builtin = ["DIRECT", "REJECT"]
+        let groups = state.activeProfileProxyGroups.map(\.name)
+        let nodes = state.activeProfileNodes.map(\.name)
+        return Array(Set(builtin + groups + nodes)).sorted {
+            $0.localizedStandardCompare($1) == .orderedAscending
+        }
+    }
+
+    private var canSubmit: Bool {
+        draft.isValid
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("添加规则")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(ClashMeowPalette.ink)
+
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("位置")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(ClashMeowPalette.muted)
+                        WrappingRuleOptionRow {
+                            ForEach(RuleOverridePlacement.allCases) { item in
+                                RuleOptionButton(
+                                    title: item.title,
+                                    isSelected: placement == item,
+                                    color: ClashMeowPalette.purple,
+                                    width: 78
+                                ) {
+                                    placement = item
+                                }
+                            }
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("类型")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(ClashMeowPalette.muted)
+                        WrappingRuleOptionRow {
+                            ForEach(RuleOverrideDraft.commonTypes, id: \.self) { type in
+                                RuleOptionButton(
+                                    title: type,
+                                    isSelected: draft.type == type,
+                                    color: ClashMeowPalette.purple
+                                ) {
+                                    draft.type = type
+                                    draft.normalizeForSelectedType()
+                                }
+                            }
+                        }
+                    }
+
+                    TextField("匹配内容", text: $draft.payload)
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(!draft.requiresPayload)
+                        .onSubmit { submit() }
+
+                    TextField("出站策略", text: $draft.proxy)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { submit() }
+
+                    if !proxyOptions.isEmpty {
+                        WrappingRuleOptionRow {
+                            ForEach(proxyOptions, id: \.self) { proxy in
+                                RuleOptionButton(
+                                    title: proxy,
+                                    isSelected: draft.proxy == proxy,
+                                    color: ClashMeowPalette.purple
+                                ) {
+                                    draft.proxy = proxy
+                                }
+                            }
+                        }
+                    }
+
+                    if draft.supportsNoResolve || draft.supportsSource {
+                        HStack(spacing: 14) {
+                            if draft.supportsNoResolve {
+                                Toggle("no-resolve", isOn: $draft.noResolve)
+                            }
+                            if draft.supportsSource {
+                                Toggle("src", isOn: $draft.source)
+                            }
+                        }
+                        .toggleStyle(.checkbox)
+                        .font(.system(size: 12, weight: .semibold))
+                    }
+                }
+            }
+            .frame(maxHeight: 480)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("实时结果")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(ClashMeowPalette.muted)
+                Text(draft.ruleText)
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(ClashMeowPalette.purple)
+                    .lineLimit(nil)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(ClashMeowPalette.purple.opacity(0.14), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+
+            HStack {
+                Spacer()
+                Button("取消") {
+                    dismiss()
+                }
+                Button("确定") {
+                    submit()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!canSubmit)
+            }
+        }
+        .padding(20)
+        .frame(width: 560)
+        .frame(maxHeight: 620)
+    }
+
+    private func submit() {
+        guard canSubmit else { return }
+        let rule = draft.ruleText
+        let selectedPlacement = placement
+        Task {
+            await state.addRuleOverride(rule, placement: selectedPlacement)
+            dismiss()
+        }
+    }
+}
+
+private enum RuleRuntimeTab: String, CaseIterable, Identifiable {
+    case rules
+    case ruleProviders
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .rules: "规则"
+        case .ruleProviders: "规则集合"
+        }
+    }
+
+    func count(rules: [RuleItem], providers: [RuleProviderItem]) -> Int {
+        switch self {
+        case .rules: rules.count
+        case .ruleProviders: providers.count
+        }
+    }
+}
+
+private enum RuleSortOrder: String, CaseIterable, Identifiable {
+    case natural
+    case typeAscending
+    case typeDescending
+    case payloadAscending
+    case payloadDescending
+    case hitDescending
+    case hitAscending
+    case lastHitDescending
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .natural: "配置顺序"
+        case .typeAscending: "类型 A-Z"
+        case .typeDescending: "类型 Z-A"
+        case .payloadAscending: "匹配内容 A-Z"
+        case .payloadDescending: "匹配内容 Z-A"
+        case .hitDescending: "命中多到少"
+        case .hitAscending: "命中少到多"
+        case .lastHitDescending: "最近命中"
+        }
+    }
+
+    func sort(_ rules: [RuleItem]) -> [RuleItem] {
+        switch self {
+        case .natural:
+            return rules
+        case .typeAscending:
+            return rules.sorted { $0.type.localizedStandardCompare($1.type) == .orderedAscending }
+        case .typeDescending:
+            return rules.sorted { $0.type.localizedStandardCompare($1.type) == .orderedDescending }
+        case .payloadAscending:
+            return rules.sorted { $0.displayPayload.localizedStandardCompare($1.displayPayload) == .orderedAscending }
+        case .payloadDescending:
+            return rules.sorted { $0.displayPayload.localizedStandardCompare($1.displayPayload) == .orderedDescending }
+        case .hitDescending:
+            return rules.sorted { left, right in
+                if left.hitCount != right.hitCount { return left.hitCount > right.hitCount }
+                return left.index < right.index
+            }
+        case .hitAscending:
+            return rules.sorted { left, right in
+                if left.hitCount != right.hitCount { return left.hitCount < right.hitCount }
+                return left.index < right.index
+            }
+        case .lastHitDescending:
+            return rules.sorted { left, right in
+                switch (left.lastHit, right.lastHit) {
+                case (.some(let lhs), .some(let rhs)):
+                    if lhs != rhs { return lhs > rhs }
+                    return left.index < right.index
+                case (.some, .none):
+                    return true
+                case (.none, .some):
+                    return false
+                case (.none, .none):
+                    return left.index < right.index
+                }
+            }
+        }
+    }
+}
+
+private struct RuleFacetStrip: View {
+    let facets: [(value: String, count: Int)]
+    let selectedValues: Set<String>
+    let color: Color
+    let leadingWidth: CGFloat
+    let toggle: (String) -> Void
+    let clear: () -> Void
+
+    var body: some View {
+        if !facets.isEmpty {
+            HStack(spacing: 8) {
+                RuleOptionButton(
+                    title: "全部",
+                    isSelected: selectedValues.isEmpty,
+                    color: color,
+                    height: 32,
+                    fontSize: 12,
+                    width: leadingWidth,
+                    action: clear
+                )
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(facets, id: \.value) { facet in
+                            RuleOptionButton(
+                                title: "\(facet.value) \(facet.count)",
+                                isSelected: selectedValues.contains(facet.value),
+                                color: color,
+                                height: 32,
+                                fontSize: 12
+                            ) {
+                                toggle(facet.value)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct RuleOptionRow<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                content
+            }
+        }
+    }
+}
+
+private struct WrappingRuleOptionRow<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        WrappingLayout(spacing: 8, rowSpacing: 8) {
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct WrappingLayout: Layout {
+    var spacing: CGFloat
+    var rowSpacing: CGFloat
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) -> CGSize {
+        let rows = rows(in: proposal.width ?? .infinity, subviews: subviews)
+        let width = proposal.width ?? rows.map(\.width).max() ?? 0
+        let height = rows.reduce(CGFloat.zero) { result, row in
+            result + row.height
+        } + CGFloat(max(rows.count - 1, 0)) * rowSpacing
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) {
+        let rows = rows(in: bounds.width, subviews: subviews)
+        var y = bounds.minY
+        for row in rows {
+            var x = bounds.minX
+            for item in row.items {
+                subviews[item.index].place(
+                    at: CGPoint(x: x, y: y),
+                    proposal: ProposedViewSize(item.size)
+                )
+                x += item.size.width + spacing
+            }
+            y += row.height + rowSpacing
+        }
+    }
+
+    private func rows(in maxWidth: CGFloat, subviews: Subviews) -> [Row] {
+        var rows: [Row] = []
+        var current = Row()
+        let availableWidth = maxWidth.isFinite ? maxWidth : CGFloat.greatestFiniteMagnitude
+
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            let nextWidth = current.items.isEmpty ? size.width : current.width + spacing + size.width
+            if !current.items.isEmpty, nextWidth > availableWidth {
+                rows.append(current)
+                current = Row()
+            }
+            current.append(index: index, size: size, spacing: spacing)
+        }
+
+        if !current.items.isEmpty {
+            rows.append(current)
+        }
+        return rows
+    }
+
+    private struct Row {
+        var items: [Item] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+
+        mutating func append(index: Int, size: CGSize, spacing: CGFloat) {
+            if !items.isEmpty {
+                width += spacing
+            }
+            items.append(Item(index: index, size: size))
+            width += size.width
+            height = max(height, size.height)
+        }
+    }
+
+    private struct Item {
+        let index: Int
+        let size: CGSize
+    }
+}
+
+private struct RuleOptionButton: View {
+    let title: String
+    let isSelected: Bool
+    let color: Color
+    var height: CGFloat = 32
+    var fontSize: CGFloat = 12
+    var width: CGFloat?
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: fontSize, weight: .semibold))
+                .foregroundStyle(isSelected ? color : ClashMeowPalette.ink.opacity(0.76))
+                .lineLimit(1)
+                .padding(.horizontal, 14)
+                .frame(width: width, height: height)
+                .background(backgroundColor, in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var backgroundColor: Color {
+        isSelected ? color.opacity(0.14) : Color(hex: 0xE7ECF3)
     }
 }
 
@@ -951,6 +1598,16 @@ private struct RuleRow: View {
     private var hitRateText: String {
         guard let rate = rule.hitRate else { return "-" }
         return "\(Int((rate * 100).rounded()))%"
+    }
+
+    private var lastActivityText: String {
+        if let lastHit = rule.lastHit, !lastHit.isEmpty {
+            return "最近命中 \(lastHit)"
+        }
+        if let lastMiss = rule.lastMiss, !lastMiss.isEmpty {
+            return "最近未命中 \(lastMiss)"
+        }
+        return "尚无命中记录"
     }
 
     var body: some View {
@@ -972,13 +1629,14 @@ private struct RuleRow: View {
                 .lineLimit(1)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(rule.payload.isEmpty ? "MATCH" : rule.payload)
+                Text(rule.displayPayload)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(ClashMeowPalette.ink)
                     .lineLimit(1)
-                Text("命中 \(rule.hitCount) · 未命中 \(rule.missCount) · size \(rule.size)")
+                Text("命中 \(rule.hitCount) · 未命中 \(rule.missCount) · size \(rule.size) · \(lastActivityText)")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(ClashMeowPalette.muted)
+                    .lineLimit(1)
             }
 
             Spacer(minLength: 8)
@@ -992,6 +1650,7 @@ private struct RuleRow: View {
         }
         .padding(12)
         .surfaceCard()
+        .opacity(rule.isEnabled ? 1 : 0.58)
         .contextMenu {
             Button("复制规则") {
                 let pasteboard = NSPasteboard.general
@@ -1002,33 +1661,67 @@ private struct RuleRow: View {
     }
 }
 
-private struct YAMLRulesSummaryCard: View {
+private struct RuleProviderRow: View {
     @EnvironmentObject private var state: AppState
-
-    private var summary: (ruleCount: Int, proxyCount: Int) {
-        guard let yaml = try? String(contentsOf: state.core.configFile, encoding: .utf8) else {
-            return (0, 0)
-        }
-        let lines = yaml.split(whereSeparator: \.isNewline).map(String.init)
-        return (
-            lines.filter { $0.trimmingCharacters(in: .whitespaces).hasPrefix("- ") && $0.contains(",") }.count,
-            lines.filter { $0.trimmingCharacters(in: .whitespaces).hasPrefix("name:") }.count
-        )
-    }
+    let provider: RuleProviderItem
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("当前配置摘要")
-                .font(.system(size: 16, weight: .bold))
-            HStack(spacing: 8) {
-                ProfileChip(text: "mode \(state.modeText)")
-                ProfileChip(text: "log \(state.logLevelText)")
-                ProfileChip(text: "\(summary.ruleCount) 条规则")
-                ProfileChip(text: "\(summary.proxyCount) 个节点")
+        HStack(spacing: 12) {
+            Image(systemName: "tray.full")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(ClashMeowPalette.purple)
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(provider.name)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(ClashMeowPalette.ink)
+                    .lineLimit(1)
+
+                HStack(spacing: 6) {
+                    ProfileChip(text: provider.displayBehavior)
+                    ProfileChip(text: provider.displayVehicleType)
+                    ProfileChip(text: provider.displayFormat)
+                    ProfileChip(text: provider.ruleCountText)
+                    if let updatedAt = provider.updatedAt, !updatedAt.isEmpty {
+                        ProfileChip(text: updatedAt)
+                    }
+                }
+                .lineLimit(1)
             }
+
+            Spacer(minLength: 8)
+
+            Button {
+                Task { await state.updateRuleProvider(provider) }
+            } label: {
+                if state.isUpdatingRuleProvider(provider) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 28, height: 28)
+                } else {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 14, weight: .medium))
+                        .frame(width: 28, height: 28)
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(!state.core.status.isHealthy || state.isUpdatingRuleProvider(provider))
+            .help("更新规则集合")
         }
-        .padding(16)
+        .padding(12)
         .surfaceCard()
+        .contextMenu {
+            Button("复制名称") {
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                pasteboard.setString(provider.name, forType: .string)
+            }
+            Button("更新规则集合") {
+                Task { await state.updateRuleProvider(provider) }
+            }
+            .disabled(!state.core.status.isHealthy)
+        }
     }
 }
 
@@ -1092,10 +1785,11 @@ private struct TUNContent: View {
                     FeatureCard(
                         title: tunToggle.title,
                         subtitle: tunToggle.subtitle,
-                        stateText: state.isTunEnabled ? "已开启" : "已关闭",
+                        stateText: state.isApplyingTunUpdate ? "应用中" : (state.isTunEnabled ? "已开启" : "已关闭"),
                         stateColor: state.isTunEnabled ? ClashMeowPalette.purple : ClashMeowPalette.orange,
                         isOn: state.isTunEnabled,
-                        actionImage: nil
+                        actionImage: nil,
+                        isDisabled: state.isApplyingTunUpdate
                     ) { state.setToggle(tunToggle, isOn: $0) }
                 }
                 SettingFactCard(title: "设备", value: state.tunDevice, image: "lock.shield")
@@ -1152,10 +1846,10 @@ private struct DashboardContent: View {
                     FeatureCard(
                         title: "系统代理",
                         subtitle: "大多数应用的流量可以通过系统代理设置接管，兼容性和性能更稳定。",
-                        stateText: state.systemProxyEnabled ? "已设置" : (proxyToggle?.isOn == true ? "待应用" : "未设置"),
-                        stateColor: (state.systemProxyEnabled || proxyToggle?.isOn == true) ? ClashMeowPalette.purple : ClashMeowPalette.orange,
+                        stateText: state.systemProxyEnabled ? "已设置" : "未设置",
+                        stateColor: state.systemProxyEnabled ? ClashMeowPalette.purple : ClashMeowPalette.orange,
                         isOn: proxyToggle?.isOn == true,
-                        actionImage: "ellipsis",
+                        actionImage: nil,
                         onToggle: { isOn in
                             if let proxyToggle {
                                 state.setToggle(proxyToggle, isOn: isOn)
@@ -1166,10 +1860,11 @@ private struct DashboardContent: View {
                     FeatureCard(
                         title: "增强模式",
                         subtitle: "未遵循系统代理的应用可经由 TUN 或规则引擎接管，保持所有流量由 \(AppInfo.displayName) 路由。",
-                        stateText: state.isTunEnabled ? "已启用" : "已禁用",
+                        stateText: state.isApplyingTunUpdate ? "应用中" : (state.isTunEnabled ? "已启用" : "已禁用"),
                         stateColor: state.isTunEnabled ? ClashMeowPalette.purple : ClashMeowPalette.orange,
                         isOn: state.isTunEnabled,
                         actionImage: nil,
+                        isDisabled: state.isApplyingTunUpdate,
                         onToggle: { isOn in
                             if let tunToggle {
                                 state.setToggle(tunToggle, isOn: isOn)
@@ -1193,7 +1888,7 @@ private struct ProfilesContent: View {
     @FocusState private var urlFieldFocused: Bool
 
     var body: some View {
-        PageScaffold(title: "配置文件") {
+        PageScaffold(title: "配置") {
             VStack(alignment: .leading, spacing: 14) {
                 importControls
 
@@ -1318,7 +2013,7 @@ private struct ProfilesContent: View {
     }
 
     private var proxyImportToggle: some View {
-        Toggle("通过本机网络", isOn: $usesProxyForImport)
+        Toggle("代理", isOn: $usesProxyForImport)
             .toggleStyle(.checkbox)
             .fixedSize()
     }
@@ -1396,6 +2091,7 @@ private struct YAMLProfileSummary: Identifiable {
         let modifiedAt = attributes?[.modificationDate] as? Date
         let yaml = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
         let lines = yaml.split(whereSeparator: \.isNewline)
+        let fileConfig = MihomoConfig.parsed(from: yaml)
 
         self.id = url.path
         self.name = url.lastPathComponent
@@ -1403,10 +2099,10 @@ private struct YAMLProfileSummary: Identifiable {
         self.fileSizeText = formatByteCount(fileSize?.intValue ?? 0)
         self.lineCount = lines.count
         self.modifiedAt = modifiedAt
-        self.modeText = MihomoMode(configValue: config?.mode ?? Self.scalarValue("mode", in: yaml)).displayValue
-        self.mixedPortText = "\(config?.mixedPort ?? Int(Self.scalarValue("mixed-port", in: yaml) ?? "") ?? 7890)"
-        let allowLan = config?.allowLan ?? Self.boolValue("allow-lan", in: yaml)
-        let tunEnabled = config?.tun?.enable ?? Self.nestedBoolValue(section: "tun", key: "enable", in: yaml)
+        self.modeText = MihomoMode(configValue: fileConfig.mode ?? config?.mode).displayValue
+        self.mixedPortText = "\(fileConfig.mixedPort ?? config?.mixedPort ?? 7890)"
+        let allowLan = fileConfig.allowLan ?? config?.allowLan
+        let tunEnabled = fileConfig.tun?.enable ?? config?.tun?.enable
         self.allowLanText = allowLan == true ? "局域网已开启" : "局域网已关闭"
         self.tunText = tunEnabled == true ? "TUN 已开启" : "TUN 已关闭"
         self.proxyGroupCount = proxyGroupCount
@@ -1414,41 +2110,6 @@ private struct YAMLProfileSummary: Identifiable {
 
     var detailText: String {
         "\(fileSizeText) · \(lineCount) 行 · 本机端口 \(mixedPortText)"
-    }
-
-    private static func scalarValue(_ key: String, in yaml: String) -> String? {
-        yaml.split(whereSeparator: \.isNewline)
-            .lazy
-            .map { String($0).trimmingCharacters(in: .whitespaces) }
-            .first { $0.hasPrefix("\(key):") }?
-            .split(separator: ":", maxSplits: 1)
-            .last
-            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'"))) }
-    }
-
-    private static func boolValue(_ key: String, in yaml: String) -> Bool? {
-        guard let value = scalarValue(key, in: yaml)?.lowercased() else { return nil }
-        if ["true", "yes", "on"].contains(value) { return true }
-        if ["false", "no", "off"].contains(value) { return false }
-        return nil
-    }
-
-    private static func nestedBoolValue(section: String, key: String, in yaml: String) -> Bool? {
-        var isInsideSection = false
-        for rawLine in yaml.split(whereSeparator: \.isNewline).map(String.init) {
-            let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("\(section):") {
-                isInsideSection = true
-                continue
-            }
-            if isInsideSection, !rawLine.hasPrefix(" "), !rawLine.hasPrefix("\t") {
-                return nil
-            }
-            if isInsideSection, trimmed.hasPrefix("\(key):") {
-                return boolValue(key, in: trimmed)
-            }
-        }
-        return nil
     }
 }
 
@@ -1555,6 +2216,10 @@ private struct ProfilesListRow: View {
                             }
                         }
                     }
+
+                    if let subscription = profile.subscriptionUserInfo {
+                        ProfileSubscriptionUsageBlock(subscription: subscription)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -1571,6 +2236,53 @@ private struct ProfilesListRow: View {
             }
         }
         .help(profile.isCurrent ? "当前配置" : "点击切换到此配置")
+    }
+}
+
+private struct ProfileSubscriptionUsageBlock: View {
+    let subscription: SubscriptionUserInfo
+
+    private var usageText: String {
+        let used = formatByteCount(subscription.used)
+        guard subscription.total > 0 else { return "\(used) / 未提供总量" }
+        let percent = Int((subscription.progress ?? 0) * 100)
+        return "\(used) / \(formatByteCount(subscription.total)) · \(percent)%"
+    }
+
+    private var expireText: String {
+        guard let expire = subscription.expire, expire > 0 else {
+            return "到期：未提供"
+        }
+        let date = Date(timeIntervalSince1970: TimeInterval(expire))
+        return "到期：\(Self.dateFormatter.string(from: date))"
+    }
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Label(usageText, systemImage: "chart.line.uptrend.xyaxis")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(ClashMeowPalette.muted)
+
+            Label(expireText, systemImage: "clock")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+
+            if let progress = subscription.progress {
+                GradientProgressBar(progress: progress)
+                    .frame(maxWidth: 360)
+            } else {
+                EmptyProgressBar()
+                    .frame(maxWidth: 360)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -1828,8 +2540,15 @@ private struct CorePowerSwitch: View {
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 8) {
-            Toggle("", isOn: Binding(
-                get: { state.core.status.isHealthy },
+            Toggle("内核总开关", isOn: Binding(
+                get: {
+                    switch state.core.status {
+                    case .starting, .running:
+                        true
+                    case .stopped, .missingBinary, .failed:
+                        false
+                    }
+                },
                 set: { isOn in
                     isOn ? state.connect() : state.disconnect()
                 }
@@ -1838,7 +2557,7 @@ private struct CorePowerSwitch: View {
             .tint(ClashMeowPalette.purple)
             .labelsHidden()
             .disabled(state.core.status == .starting)
-            .help(state.core.status.isHealthy ? "停止内核" : "启动内核")
+            .help(state.core.status.isHealthy ? "内核总开关：停止内核" : "内核总开关：启动内核")
 
             HStack(spacing: 6) {
                 Circle()
@@ -2007,7 +2726,7 @@ private struct ProxyNodeCard: View {
                                     .frame(width: 30, height: 24)
                                     .background(Color(hex: 0xF0F2F7), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.node.name)
+                                    Text(item.node.displayName)
                                         .font(.system(size: 13, weight: .bold))
                                         .foregroundStyle(ClashMeowPalette.ink)
                                         .lineLimit(1)
@@ -2041,6 +2760,7 @@ private struct FeatureCard: View {
     let stateColor: Color
     let isOn: Bool
     let actionImage: String?
+    var isDisabled = false
     let onToggle: (Bool) -> Void
 
     var body: some View {
@@ -2056,6 +2776,7 @@ private struct FeatureCard: View {
                     .toggleStyle(.switch)
                     .tint(ClashMeowPalette.purple)
                     .labelsHidden()
+                    .disabled(isDisabled)
             }
 
             Text(subtitle)
@@ -2175,40 +2896,164 @@ private struct ActivityGrid: View {
 
 private struct LatencyCard: View {
     @EnvironmentObject private var state: AppState
+    @State private var isShowingDiagnostics = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 6) {
                 Text("互联网延迟")
                     .font(.system(size: 14, weight: .bold))
-                TodoBadge()
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 12, weight: .semibold))
+                if state.isDiagnosingInternetLatency {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.7)
+                } else {
+                    Button {
+                        Task { await state.diagnoseInternetLatency() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
+                }
                 Spacer()
-                Button("诊断") { Task { await state.refresh() } }
+                Button("诊断") {
+                    isShowingDiagnostics = true
+                    Task { await state.diagnoseInternetLatency() }
+                }
                     .buttonStyle(.borderless)
                     .controlSize(.small)
                     .padding(.horizontal, 12)
                     .background(Color(hex: 0xF5F7FA), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .disabled(state.isDiagnosingInternetLatency)
             }
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(state.core.status.isHealthy ? state.activitySelectedProxyDelayText.replacingOccurrences(of: " ms", with: "") : "--")
+                Text(state.activityInternetLatencyText.replacingOccurrences(of: " ms", with: ""))
                     .font(.system(size: 28, weight: .bold))
                 Text("ms")
                     .font(.system(size: 13, weight: .bold))
             }
             HStack(spacing: 0) {
-                MiniMetric(title: "路由器", value: "TODO", showsTodo: true)
+                MiniMetric(title: "路由器", value: state.activityRouterLatencyText)
                 Divider()
-                MiniMetric(title: "DNS", value: "TODO", showsTodo: true)
+                MiniMetric(title: "DNS", value: state.activityDNSLatencyText)
                 Divider()
-                MiniMetric(title: "节点", value: state.activitySelectedProxyDelayText)
+                MiniMetric(title: "当前节点", value: state.activitySelectedProxyDelayText)
             }
         }
         .padding(20)
         .frame(maxWidth: .infinity, minHeight: 142, alignment: .topLeading)
         .surfaceCard()
+        .task {
+            await state.diagnoseInternetLatencyIfNeeded()
+        }
+        .sheet(isPresented: $isShowingDiagnostics) {
+            NetworkDiagnosticsSheet()
+                .environmentObject(state)
+        }
+    }
+}
+
+private struct NetworkDiagnosticsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var state: AppState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("网络诊断")
+                    .font(.system(size: 15, weight: .semibold))
+                Text("网络诊断工具可以协助你快速地找到问题。")
+                    .font(.system(size: 12))
+                    .foregroundStyle(ClashMeowPalette.muted)
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 20)
+            .padding(.bottom, 12)
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    diagnosticsSummary
+                    diagnosticsLog
+                }
+                .padding(24)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(minHeight: 280)
+
+            Divider()
+
+            HStack {
+                if state.isDiagnosingInternetLatency {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Spacer()
+                Button("关闭") {
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 14)
+        }
+        .frame(width: 690, height: 520)
+    }
+
+    private var diagnosticsSummary: some View {
+        HStack(spacing: 0) {
+            MiniMetric(title: "公网", value: state.activityInternetLatencyText)
+            Divider()
+            MiniMetric(title: "路由器", value: state.activityRouterLatencyText)
+            Divider()
+            MiniMetric(title: "DNS", value: state.activityDNSLatencyText)
+            Divider()
+            MiniMetric(title: "当前节点", value: state.activitySelectedProxyDelayText)
+        }
+        .padding(14)
+        .background(Color(hex: 0xF7F8FB), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var diagnosticsLog: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(state.internetLatencySnapshot.entries) { entry in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(entry.title)
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(ClashMeowPalette.ink)
+                    Text("\(symbol(for: entry.level)) \(entry.message)")
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundStyle(color(for: entry.level))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            if state.internetLatencySnapshot.entries.isEmpty {
+                Text(state.isDiagnosingInternetLatency ? "正在诊断..." : "尚无诊断结果")
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundStyle(ClashMeowPalette.muted)
+            }
+        }
+    }
+
+    private func symbol(for level: InternetDiagnosticEntry.Level) -> String {
+        switch level {
+        case .success: return "✓"
+        case .warning: return "⚠"
+        case .info: return "•"
+        }
+    }
+
+    private func color(for level: InternetDiagnosticEntry.Level) -> Color {
+        switch level {
+        case .success: return Color(red: 0.18, green: 0.62, blue: 0.32)
+        case .warning: return ClashMeowPalette.orange
+        case .info: return ClashMeowPalette.muted
+        }
     }
 }
 

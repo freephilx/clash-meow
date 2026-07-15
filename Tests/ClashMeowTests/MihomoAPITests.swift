@@ -43,18 +43,17 @@ struct MihomoAPITests {
     }
 
     @Test func groupDelayReturnsResultsWhenControllerIsReachable() async throws {
-        var api = MihomoAPI(baseURL: URL(string: "http://127.0.0.1:9090")!)
-        do {
-            _ = try await api.version()
-        } catch {
-            return
-        }
+        MockMihomoURLProtocolSupport.reset()
+        let api = MihomoAPI(
+            baseURL: URL(string: "http://127.0.0.1:9090")!,
+            urlSession: MihomoAPI.makeMockSession(protocolClass: MockMihomoURLProtocol.self)
+        )
 
         let delayMap = try await api.groupDelay(
             groupName: "koyun",
             testURL: "http://www.gstatic.com/generate_204",
             timeoutMs: 12_000
         )
-        #expect(!delayMap.isEmpty)
+        #expect(delayMap == ["HK-01": 120, "JP-02": 88])
     }
 }

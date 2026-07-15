@@ -17,10 +17,12 @@ ClashMeow 以 Xcode 工程作为主要开发入口，Swift Package Manager 作�
 当前实现方式：
 
 - 将 mihomo 作为应用资源或本地可执行文件发现。
-- 使用 `~/.config/clash.meta` 作为工作目录。
-- 使用 `~/.config/clash.meta/config.yaml` 作为默认配置文件。
-- 以子进程方式启动 mihomo。
+- 使用 `~/.config/clash-meow` 作为工作目录。
+- 使用 `~/.config/clash-meow/config.yaml` 作为默认配置文件。
+- App bundle 运行时通过 `com.clash.meow.helper` 以 root 启动 mihomo；SwiftPM 或非 app bundle 调试环境保留普通子进程启动路径。
 - 通过 `127.0.0.1:9090` 的 `external-controller` 读取和修改运行状态。
+
+持久化路径和规则见 [持久化](持久化.md)。
 
 应用按以下顺序查找 mihomo：
 
@@ -90,4 +92,6 @@ dist/Clash Meow.app
 
 ## 生产化说明
 
-TUN 模式、系统代理修改等能力在 macOS 上可能需要授权。当前应用已经完成 UI、配置面、进程生命周期和 controller API 集成；生产版本建议增加类似 ClashX.Meta `ProxyConfigHelper` 的 privileged helper，用于处理需要更高权限的系统操作。
+TUN 模式、系统代理修改、端口释放等能力在 macOS 上可能需要授权。当前应用已经集成 `com.clash.meow.helper` privileged helper：启动时必须校验并安装 helper；App bundle 下 mihomo 的启动、停止和重启统一由 helper 以 root 托管；普通权限无法释放端口时也由 helper 处理端口释放。
+
+本地 `Sign to Run Locally` 构建使用 identifier-only 的 helper 授权要求，便于开发机反复编译和安装。正式签名发布时，应使用稳定 Developer ID，并把 app/helper 的授权 requirement 收紧到对应的 designated requirement。

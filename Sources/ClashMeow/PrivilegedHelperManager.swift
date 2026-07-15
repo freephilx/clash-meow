@@ -26,6 +26,9 @@ final class PrivilegedHelperManager: @unchecked Sendable {
     static let shared = PrivilegedHelperManager()
 
     private var connection: NSXPCConnection?
+    private var installRetryNotBefore: Date?
+    private var lastInstallErrorDescription: String?
+    private var verifiedHelperVersion: String?
     private let lock = NSLock()
 
     private init() {}
@@ -39,7 +42,22 @@ final class PrivilegedHelperManager: @unchecked Sendable {
     }
 
     var needsInstallOrUpdate: Bool {
-        !isInstalled || installedHelperVersion() != PrivilegedHelperConstants.helperVersion
+        guard isInstalled else { return true }
+        if verifiedHelperVersion == PrivilegedHelperConstants.helperVersion {
+            return false
+        }
+        guard let version = installedHelperVersion() else {
+            return true
+        }
+        verifiedHelperVersion = version
+        return version != PrivilegedHelperConstants.helperVersion
+    }
+
+    func ensureInstalledForApplicationStartup() throws {
+        guard canInstallBundledHelper else {
+            throw PrivilegedHelperError.blessFailed("当前进程不是 app bundle，无法安装特权助手")
+        }
+        try ensureInstalled()
     }
 
     func releasePorts(_ ports: Set<Int>, excludingPID: pid_t?) throws -> [String] {
@@ -56,6 +74,71 @@ final class PrivilegedHelperManager: @unchecked Sendable {
             invalidateConnection()
             usleep(300_000)
             return try callReleasePorts(ports, excludingPID: excludingPID)
+        }
+    }
+
+    func startCore(executablePath: String, configDirectory: URL, configFile: URL, logFile: URL) throws -> pid_t {
+        guard canInstallBundledHelper else {
+            throw PrivilegedHelperError.blessFailed("当前进程不是 app bundle，无法使用特权模式启动内核")
+        }
+        try ensureInstalled()
+        do {
+            return try callStartCore(
+                executablePath: executablePath,
+                configDirectory: configDirectory,
+                configFile: configFile,
+                logFile: logFile
+            )
+        } catch {
+            debugLog("特权启动 core 调用失败，将重试一次: \(error.localizedDescription)")
+            invalidateConnection()
+            usleep(300_000)
+            return try callStartCore(
+                executablePath: executablePath,
+                configDirectory: configDirectory,
+                configFile: configFile,
+                logFile: logFile
+            )
+        }
+    }
+
+    func stopCore() throws {
+        guard canInstallBundledHelper else {
+            throw PrivilegedHelperError.blessFailed("当前进程不是 app bundle，无法停止特权内核")
+        }
+        try ensureInstalled()
+        do {
+            try callStopCore()
+        } catch {
+            debugLog("特权停止 core 调用失败，将重试一次: \(error.localizedDescription)")
+            invalidateConnection()
+            usleep(300_000)
+            try callStopCore()
+        }
+    }
+
+    func restartCore(executablePath: String, configDirectory: URL, configFile: URL, logFile: URL) throws -> pid_t {
+        guard canInstallBundledHelper else {
+            throw PrivilegedHelperError.blessFailed("当前进程不是 app bundle，无法重启特权内核")
+        }
+        try ensureInstalled()
+        do {
+            return try callRestartCore(
+                executablePath: executablePath,
+                configDirectory: configDirectory,
+                configFile: configFile,
+                logFile: logFile
+            )
+        } catch {
+            debugLog("特权重启 core 调用失败，将重试一次: \(error.localizedDescription)")
+            invalidateConnection()
+            usleep(300_000)
+            return try callRestartCore(
+                executablePath: executablePath,
+                configDirectory: configDirectory,
+                configFile: configFile,
+                logFile: logFile
+            )
         }
     }
 
@@ -83,26 +166,133 @@ final class PrivilegedHelperManager: @unchecked Sendable {
         return responseLogs
     }
 
+    private func callStartCore(
+        executablePath: String,
+        configDirectory: URL,
+        configFile: URL,
+        logFile: URL
+    ) throws -> pid_t {
+        let proxy = try remoteProxy()
+        let semaphore = DispatchSemaphore(value: 0)
+        var responsePID = NSNumber(value: -1)
+        var responseError: NSError?
+        debugLog("调用 helper startCore")
+        proxy.startCore(
+            executablePath: executablePath,
+            configDirectory: configDirectory.path,
+            configFile: configFile.path,
+            logFile: logFile.path
+        ) { pid, error in
+            responsePID = pid
+            responseError = error
+            semaphore.signal()
+        }
+        guard semaphore.wait(timeout: .now() + 10) == .success else {
+            invalidateConnection()
+            throw PrivilegedHelperError.timeout("startCore")
+        }
+        if let responseError {
+            throw PrivilegedHelperError.operationFailed(responseError.localizedDescription)
+        }
+        let pid = responsePID.int32Value
+        guard pid > 0 else {
+            throw PrivilegedHelperError.operationFailed("特权助手未返回有效内核 PID")
+        }
+        return pid
+    }
+
+    private func callRestartCore(
+        executablePath: String,
+        configDirectory: URL,
+        configFile: URL,
+        logFile: URL
+    ) throws -> pid_t {
+        let proxy = try remoteProxy()
+        let semaphore = DispatchSemaphore(value: 0)
+        var responsePID = NSNumber(value: -1)
+        var responseError: NSError?
+        debugLog("调用 helper restartCore")
+        proxy.restartCore(
+            executablePath: executablePath,
+            configDirectory: configDirectory.path,
+            configFile: configFile.path,
+            logFile: logFile.path
+        ) { pid, error in
+            responsePID = pid
+            responseError = error
+            semaphore.signal()
+        }
+        guard semaphore.wait(timeout: .now() + 10) == .success else {
+            invalidateConnection()
+            throw PrivilegedHelperError.timeout("restartCore")
+        }
+        if let responseError {
+            throw PrivilegedHelperError.operationFailed(responseError.localizedDescription)
+        }
+        let pid = responsePID.int32Value
+        guard pid > 0 else {
+            throw PrivilegedHelperError.operationFailed("特权助手未返回有效内核 PID")
+        }
+        return pid
+    }
+
+    private func callStopCore() throws {
+        let proxy = try remoteProxy()
+        let semaphore = DispatchSemaphore(value: 0)
+        var responseError: NSError?
+        debugLog("调用 helper stopCore")
+        proxy.stopCore { error in
+            responseError = error
+            semaphore.signal()
+        }
+        guard semaphore.wait(timeout: .now() + 10) == .success else {
+            invalidateConnection()
+            throw PrivilegedHelperError.timeout("stopCore")
+        }
+        if let responseError {
+            throw PrivilegedHelperError.operationFailed(responseError.localizedDescription)
+        }
+    }
+
     private func ensureInstalled() throws {
         let installed = isInstalled
         debugLog("helper installed=\(installed)")
-        if installed, !needsInstallOrUpdate {
+        if installed, verifiedHelperVersion == PrivilegedHelperConstants.helperVersion {
+            debugLog("helper 已在本次会话中通过版本校验")
+            return
+        }
+        if installed, let version = installedHelperVersion(timeout: 3), version == PrivilegedHelperConstants.helperVersion {
+            verifiedHelperVersion = version
             debugLog("helper 已安装且版本匹配")
             return
         }
-
-        let authRef = try createAuthorizationRef()
-        defer { AuthorizationFree(authRef, []) }
-        try acquireBlessRights(authRef)
-
-        if installed {
-            debugLog("helper 需要更新，先移除旧版本")
-            try removeInstalledHelper(authRef: authRef)
+        if let retryDate = installRetryNotBefore, retryDate > Date() {
+            let reason = lastInstallErrorDescription ?? "上次授权未完成"
+            throw PrivilegedHelperError.blessFailed("暂缓重复请求管理员授权：\(reason)")
         }
-        debugLog("开始安装 helper")
-        try install(authRef: authRef)
-        usleep(300_000)
-        debugLog("helper 安装完成")
+
+        do {
+            let authRef = try createAuthorizationRef()
+            defer { AuthorizationFree(authRef, []) }
+            try acquireBlessRights(authRef)
+
+            if installed {
+                debugLog("helper 需要更新，先移除旧版本")
+                verifiedHelperVersion = nil
+                try removeInstalledHelper(authRef: authRef)
+            }
+            debugLog("开始安装 helper")
+            try install(authRef: authRef)
+            usleep(300_000)
+            verifiedHelperVersion = PrivilegedHelperConstants.helperVersion
+            installRetryNotBefore = nil
+            lastInstallErrorDescription = nil
+            debugLog("helper 安装完成")
+        } catch {
+            installRetryNotBefore = Date().addingTimeInterval(300)
+            lastInstallErrorDescription = error.localizedDescription
+            throw error
+        }
     }
 
     private func install(authRef: AuthorizationRef) throws {

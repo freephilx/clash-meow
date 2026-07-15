@@ -76,12 +76,12 @@ if [ -f "${MIHOMO_BIN}" ]; then
   sign_path "${MIHOMO_BIN}"
 fi
 
-python3 - "${HELPER_BIN}" "${HELPER_INFO}" "${APP_INFO}" "${HELPER_ID}" "${APP_ID}" <<'PY'
+python3 - "${HELPER_BIN}" "${HELPER_INFO}" "${APP_INFO}" "${HELPER_ID}" "${APP_ID}" "${SIGN_ID}" <<'PY'
 import plistlib
 import subprocess
 import sys
 
-helper_bin, helper_info, app_info, helper_id, app_id = sys.argv[1:6]
+helper_bin, helper_info, app_info, helper_id, app_id, sign_id = sys.argv[1:7]
 
 def designated_requirement(path: str) -> str:
     result = subprocess.run(
@@ -96,8 +96,12 @@ def designated_requirement(path: str) -> str:
         raise SystemExit(f"Cannot read designated requirement for {path}\n{output}")
     return output.split(marker, 1)[1].strip()
 
-helper_requirement = designated_requirement(helper_bin)
-app_requirement = helper_requirement.replace(f'identifier "{helper_id}"', f'identifier "{app_id}"', 1)
+if sign_id == "-" or not sign_id:
+    helper_requirement = f'identifier "{helper_id}"'
+    app_requirement = f'identifier "{app_id}"'
+else:
+    helper_requirement = designated_requirement(helper_bin)
+    app_requirement = helper_requirement.replace(f'identifier "{helper_id}"', f'identifier "{app_id}"', 1)
 
 with open(app_info, "rb") as handle:
     app_plist = plistlib.load(handle)
