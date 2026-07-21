@@ -1884,6 +1884,7 @@ private struct ProfilesContent: View {
     @State private var remoteURL = ""
     @State private var usesProxyForImport = false
     @State private var isImportingFile = false
+    @State private var isDropTargeted = false
     @State private var profileDisplayOrder: [String] = []
     @FocusState private var urlFieldFocused: Bool
 
@@ -1913,6 +1914,7 @@ private struct ProfilesContent: View {
                                     config: profile.isCurrent ? state.displayedConfig : nil,
                                     proxyGroupCount: profile.isCurrent ? state.visibleProxyGroups.count : 0
                                 ),
+                                isBusy: state.isImportingProfile || !state.refreshingProfileIDs.isEmpty,
                                 isRefreshing: state.refreshingProfileIDs.contains(profile.id),
                                 use: {
                                     Task { await state.selectProfile(profile) }
@@ -1930,6 +1932,16 @@ private struct ProfilesContent: View {
             }
         }
         .background(ClashMeowPalette.page)
+        .overlay {
+            if isDropTargeted {
+                ProfileDropOverlay()
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+        .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+            handleProfileDrop(providers: providers)
+        }
         .fileImporter(
             isPresented: $isImportingFile,
             allowedContentTypes: [.yaml, .data, .plainText],
@@ -2059,6 +2071,43 @@ private struct ProfilesContent: View {
             return
         }
 
+        importLocalProfile(from: url)
+    }
+
+    private func handleProfileDrop(providers: [NSItemProvider]) -> Bool {
+        guard !state.isImportingProfile,
+              let provider = providers.first(where: {
+                  $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+              }) else {
+            return false
+        }
+
+        provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, error in
+            let url: URL?
+            if let itemURL = item as? URL {
+                url = itemURL
+            } else if let data = item as? Data {
+                url = URL(dataRepresentation: data, relativeTo: nil)
+            } else {
+                url = nil
+            }
+
+            Task { @MainActor in
+                guard error == nil, let url else {
+                    state.presentToast("无法读取拖入的文件")
+                    return
+                }
+                guard ["yaml", "yml"].contains(url.pathExtension.lowercased()) else {
+                    state.presentToast("仅支持 YAML 配置文件")
+                    return
+                }
+                importLocalProfile(from: url)
+            }
+        }
+        return true
+    }
+
+    private func importLocalProfile(from url: URL) {
         let hasAccess = url.startAccessingSecurityScopedResource()
         Task {
             defer {
@@ -2068,6 +2117,29 @@ private struct ProfilesContent: View {
             }
             await state.importLocalProfile(from: url)
         }
+    }
+}
+
+private struct ProfileDropOverlay: View {
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(ClashMeowPalette.purple.opacity(0.08))
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(
+                    ClashMeowPalette.purple,
+                    style: StrokeStyle(lineWidth: 2, dash: [8, 6])
+                )
+
+            VStack(spacing: 8) {
+                Image(systemName: "arrow.down.doc")
+                    .font(.system(size: 28, weight: .semibold))
+                Text("拖入 YAML 以导入配置")
+                    .font(.system(size: 14, weight: .semibold))
+            }
+            .foregroundStyle(ClashMeowPalette.purple)
+        }
+        .padding(12)
     }
 }
 
@@ -2116,127 +2188,149 @@ private struct YAMLProfileSummary: Identifiable {
 private struct ProfilesListRow: View {
     let profile: ClashMeowProfileSummary
     let summary: YAMLProfileSummary?
+    let isBusy: Bool
     let isRefreshing: Bool
     let use: () -> Void
     let refresh: () -> Void
     let delete: () -> Void
 
     var body: some View {
-        HStack(alignment: .center, spacing: 0) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
-                ProfileKindBadge(
-                    text: profile.kind == .remote ? "SUB" : "YAML",
-                    isSelected: profile.isCurrent
-                )
+                ProfileKindBadge(text: kindText, isSelected: profile.isCurrent)
 
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(alignment: .top, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack(spacing: 6) {
-                                Text(profile.name)
-                                    .font(.system(size: 15, weight: .bold))
-                                    .foregroundStyle(profile.isCurrent ? ClashMeowPalette.purple : ClashMeowPalette.ink)
-                                Image(systemName: profile.kind == .remote ? "arrow.triangle.2.circlepath" : "doc.plaintext")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(ClashMeowPalette.muted)
-                            }
-                            Text(profile.sourceDescription)
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(ClashMeowPalette.muted)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            if let summary {
-                                Text(summary.detailText)
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundStyle(ClashMeowPalette.muted)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(profile.name)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(profile.isCurrent ? ClashMeowPalette.purple : ClashMeowPalette.ink)
+                        .lineLimit(1)
+                    Text(profile.sourceDescription)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(ClashMeowPalette.muted)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if let summary {
+                        Text(summary.detailText)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(ClashMeowPalette.muted)
+                    }
+                }
+
+                Spacer(minLength: 12)
+
+                HStack(spacing: 8) {
+                    if let modifiedAt = profile.updatedAt ?? summary?.modifiedAt {
+                        Text(relativeUpdatedAtText(modifiedAt))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(ClashMeowPalette.muted)
+                    }
+
+                    if profile.kind == .remote {
+                        Button(action: refresh) {
+                            if isRefreshing {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
                             }
                         }
+                        .buttonStyle(.plain)
+                        .frame(width: 24, height: 24)
+                        .disabled(isBusy)
+                        .help("刷新远程配置")
+                    }
 
-                        Spacer(minLength: 8)
-
-                        if let modifiedAt = profile.updatedAt ?? summary?.modifiedAt {
-                            Text(modifiedAt, style: .relative)
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(ClashMeowPalette.muted)
-                        }
-
-                        if profile.kind == .remote {
-                            Button(action: refresh) {
-                                if isRefreshing {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                } else {
-                                    Image(systemName: "arrow.clockwise")
-                                        .font(.system(size: 12, weight: .semibold))
-                                }
-                            }
-                            .buttonStyle(.borderless)
-                            .disabled(isRefreshing)
-                            .help("刷新远程配置")
-                        }
-
-                        Menu {
-                            Button("在 Finder 中显示") {
-                                NSWorkspace.shared.activateFileViewerSelecting([profile.fileURL])
-                            }
-                            Button("复制路径") {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(profile.fileURL.path, forType: .string)
-                            }
-                            if profile.kind == .remote {
-                                Divider()
-                                Button("刷新远程配置") {
-                                    refresh()
-                                }
-                            }
-                            if !profile.isCurrent {
-                                Button("使用配置") {
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { profile.isCurrent },
+                            set: { isOn in
+                                if isOn, !profile.isCurrent {
                                     use()
                                 }
                             }
+                        )
+                    )
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .tint(ClashMeowPalette.purple)
+                    .fixedSize()
+                    .allowsHitTesting(!profile.isCurrent && !isBusy)
+                    .help(profile.isCurrent ? "当前配置" : "使用配置")
+                    .accessibilityLabel(profile.isCurrent ? "当前配置" : "使用配置")
+
+                    Menu {
+                        Button("在 Finder 中显示") {
+                            NSWorkspace.shared.activateFileViewerSelecting([profile.fileURL])
+                        }
+                        Button("复制路径") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(profile.fileURL.path, forType: .string)
+                        }
+                        if profile.kind == .remote {
                             Divider()
-                            Button("删除配置", role: .destructive) {
-                                delete()
-                            }
+                            Button("刷新远程配置", action: refresh)
+                        }
+                        Divider()
+                        Button("删除配置", role: .destructive, action: delete)
                             .disabled(profile.id == "default")
-                        } label: {
-                            Label("更多", systemImage: "ellipsis.circle")
-                        }
-                        .menuStyle(.borderlessButton)
-                        .fixedSize()
+                    } label: {
+                        Label("更多", systemImage: "ellipsis.circle")
                     }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .frame(height: 24)
+                    .disabled(isBusy)
+                }
+                .frame(height: 24)
+            }
 
-                    if let summary {
-                        HStack(spacing: 8) {
-                            ProfileChip(text: "mode \(summary.modeText)")
-                            ProfileChip(text: summary.allowLanText)
-                            ProfileChip(text: summary.tunText)
-                            if profile.isCurrent {
-                                ProfileChip(text: "\(summary.proxyGroupCount) 组节点")
-                            }
-                        }
-                    }
-
-                    if let subscription = profile.subscriptionUserInfo {
-                        ProfileSubscriptionUsageBlock(subscription: subscription)
+            if let summary {
+                HStack(spacing: 7) {
+                    ProfileChip(text: "mode \(summary.modeText)")
+                    ProfileChip(text: "端口 \(summary.mixedPortText)")
+                    ProfileChip(text: summary.allowLanText)
+                    ProfileChip(text: summary.tunText)
+                    if profile.isCurrent {
+                        ProfileChip(text: "\(summary.proxyGroupCount) 个代理组")
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.vertical, 16)
-            .padding(.leading, 16)
 
-            ProfileSelectionIndicator(isSelected: profile.isCurrent)
-        }
-        .surfaceCard()
-        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .onTapGesture {
-            if !profile.isCurrent {
-                use()
+            if let subscription = profile.subscriptionUserInfo {
+                ProfileSubscriptionUsageBlock(subscription: subscription)
             }
         }
-        .help(profile.isCurrent ? "当前配置" : "点击切换到此配置")
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(ClashMeowPalette.card, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(ClashMeowPalette.faintLine, lineWidth: 1)
+        }
+        .help(profile.isCurrent ? "当前配置" : "使用右侧开关切换配置")
     }
+
+    private var kindText: String {
+        if profile.id == "default" { return "默认" }
+        return profile.kind == .remote ? "远端" : "本地"
+    }
+
+    private func relativeUpdatedAtText(_ date: Date) -> String {
+        let now = Date()
+        let elapsed = now.timeIntervalSince(date)
+        if elapsed >= 0, elapsed < 60 { return "刚刚" }
+        return Self.relativeTimeFormatter.localizedString(for: date, relativeTo: now)
+    }
+
+    private static let relativeTimeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = Locale(identifier: "zh_Hans_CN")
+        formatter.unitsStyle = .full
+        formatter.dateTimeStyle = .numeric
+        return formatter
+    }()
 }
 
 private struct ProfileSubscriptionUsageBlock: View {
@@ -2292,28 +2386,14 @@ private struct ProfileKindBadge: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 10, weight: .bold, design: .monospaced))
-            .foregroundStyle(isSelected ? ClashMeowPalette.purple : ClashMeowPalette.muted)
-            .frame(width: 34, height: 26)
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(isSelected ? Color.white : ClashMeowPalette.muted)
+            .padding(.horizontal, 7)
+            .frame(height: 22)
             .background(
-                (isSelected ? ClashMeowPalette.purple : ClashMeowPalette.muted).opacity(0.09),
-                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                isSelected ? ClashMeowPalette.purple : ClashMeowPalette.page,
+                in: RoundedRectangle(cornerRadius: 5, style: .continuous)
             )
-    }
-}
-
-private struct ProfileSelectionIndicator: View {
-    let isSelected: Bool
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(isSelected ? ClashMeowPalette.purple : ClashMeowPalette.faintLine)
-                .frame(width: 7, height: 7)
-        }
-        .frame(width: 44)
-        .frame(maxHeight: .infinity, alignment: .center)
-        .padding(.trailing, 4)
     }
 }
 
