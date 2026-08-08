@@ -101,11 +101,11 @@ struct AppPreferenceStoreTests {
             let repository = ProfileRepository(configDirectory: directory, activeConfigFile: activeConfig)
             _ = try repository.listProfiles()
 
-            let profilesDirectory = directory.appending(path: "profiles", directoryHint: .isDirectory)
+            let mihomoConfigsDirectory = Self.mihomoConfigsURL(in: directory)
             let selectedID = "selected-profile"
             let selectedYAML = Self.profileYAML(groupName: "Selected")
             try selectedYAML.write(
-                to: profilesDirectory.appending(path: "\(selectedID).yaml"),
+                to: mihomoConfigsDirectory.appending(path: "\(selectedID).yaml"),
                 atomically: true,
                 encoding: .utf8
             )
@@ -113,7 +113,7 @@ struct AppPreferenceStoreTests {
 
             try repository.restoreSelectedProfileIfNeeded()
 
-            let currentID = try String(contentsOf: profilesDirectory.appending(path: "current.txt"), encoding: .utf8)
+            let currentID = try String(contentsOf: mihomoConfigsDirectory.appending(path: "current.txt"), encoding: .utf8)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let activeYAML = try String(contentsOf: activeConfig, encoding: .utf8)
 
@@ -132,14 +132,14 @@ struct AppPreferenceStoreTests {
             let repository = ProfileRepository(configDirectory: directory, activeConfigFile: activeConfig)
             _ = try repository.listProfiles()
 
-            let profilesDirectory = directory.appending(path: "profiles", directoryHint: .isDirectory)
+            let mihomoConfigsDirectory = Self.mihomoConfigsURL(in: directory)
             let selectedID = "selected-profile"
             try Self.profileYAML(groupName: "Selected", mixedPort: 7891).write(
-                to: profilesDirectory.appending(path: "\(selectedID).yaml"),
+                to: mihomoConfigsDirectory.appending(path: "\(selectedID).yaml"),
                 atomically: true,
                 encoding: .utf8
             )
-            try selectedID.write(to: profilesDirectory.appending(path: "current.txt"), atomically: true, encoding: .utf8)
+            try selectedID.write(to: mihomoConfigsDirectory.appending(path: "current.txt"), atomically: true, encoding: .utf8)
             try FileManager.default.createDirectory(
                 at: activeConfig.deletingLastPathComponent(),
                 withIntermediateDirectories: true
@@ -169,10 +169,10 @@ struct AppPreferenceStoreTests {
             let repository = ProfileRepository(configDirectory: directory, activeConfigFile: activeConfig)
             _ = try repository.listProfiles()
 
-            let profilesDirectory = directory.appending(path: "profiles", directoryHint: .isDirectory)
+            let mihomoConfigsDirectory = Self.mihomoConfigsURL(in: directory)
             let selectedID = "selected-profile"
             try Self.profileYAML(groupName: "Selected").write(
-                to: profilesDirectory.appending(path: "\(selectedID).yaml"),
+                to: mihomoConfigsDirectory.appending(path: "\(selectedID).yaml"),
                 atomically: true,
                 encoding: .utf8
             )
@@ -186,12 +186,13 @@ struct AppPreferenceStoreTests {
 
             let activeYAML = try String(contentsOf: activeConfig, encoding: .utf8)
             let overrideYAML = try String(
-                contentsOf: profilesDirectory.appending(path: "\(selectedID).rules.yaml"),
+                contentsOf: mihomoConfigsDirectory.appending(path: "\(selectedID).rules.yaml"),
                 encoding: .utf8
             )
             #expect(activeYAML.contains("DOMAIN-SUFFIX,example.com,Proxy"))
             #expect(overrideYAML.contains("prepend:"))
             #expect(overrideYAML.contains("DOMAIN-SUFFIX,example.com,Proxy"))
+            #expect(!(try repository.listProfiles()).contains { $0.id == "selected-profile.rules" })
         }
     }
 
@@ -201,10 +202,10 @@ struct AppPreferenceStoreTests {
             let repository = ProfileRepository(configDirectory: directory, activeConfigFile: activeConfig)
             _ = try repository.listProfiles()
 
-            let profilesDirectory = directory.appending(path: "profiles", directoryHint: .isDirectory)
+            let mihomoConfigsDirectory = Self.mihomoConfigsURL(in: directory)
             let selectedID = "selected-profile"
             try Self.profileYAML(groupName: "Selected", extraRule: "DOMAIN-SUFFIX,example.com,Proxy").write(
-                to: profilesDirectory.appending(path: "\(selectedID).yaml"),
+                to: mihomoConfigsDirectory.appending(path: "\(selectedID).yaml"),
                 atomically: true,
                 encoding: .utf8
             )
@@ -218,7 +219,7 @@ struct AppPreferenceStoreTests {
 
             let disabledActiveYAML = try String(contentsOf: activeConfig, encoding: .utf8)
             let overrideYAML = try String(
-                contentsOf: profilesDirectory.appending(path: "\(selectedID).rules.yaml"),
+                contentsOf: mihomoConfigsDirectory.appending(path: "\(selectedID).rules.yaml"),
                 encoding: .utf8
             )
             #expect(!disabledActiveYAML.contains("DOMAIN-SUFFIX,example.com,Proxy"))
@@ -233,7 +234,7 @@ struct AppPreferenceStoreTests {
 
             let enabledActiveYAML = try String(contentsOf: activeConfig, encoding: .utf8)
             #expect(enabledActiveYAML.contains("DOMAIN-SUFFIX,example.com,Proxy"))
-            #expect(!FileManager.default.fileExists(atPath: profilesDirectory.appending(path: "\(selectedID).rules.yaml").path))
+            #expect(!FileManager.default.fileExists(atPath: mihomoConfigsDirectory.appending(path: "\(selectedID).rules.yaml").path))
         }
     }
 
@@ -259,14 +260,14 @@ struct AppPreferenceStoreTests {
                 activeConfigFile: Self.runtimeConfigURL(in: directory)
             )
             _ = try repository.listProfiles()
-            let profilesDirectory = directory.appending(path: "profiles", directoryHint: .isDirectory)
+            let mihomoConfigsDirectory = Self.mihomoConfigsURL(in: directory)
             try Self.profileYAML(groupName: "IgnoredCurrent").write(
-                to: profilesDirectory.appending(path: "ignored-current.yaml"),
+                to: mihomoConfigsDirectory.appending(path: "ignored-current.yaml"),
                 atomically: true,
                 encoding: .utf8
             )
             try "ignored-current".write(
-                to: profilesDirectory.appending(path: "current.txt"),
+                to: mihomoConfigsDirectory.appending(path: "current.txt"),
                 atomically: true,
                 encoding: .utf8
             )
@@ -275,7 +276,7 @@ struct AppPreferenceStoreTests {
 
             #expect(ProfileSelectionPreference.selectedProfileID == "default")
             let currentID = try String(
-                contentsOf: profilesDirectory.appending(path: "current.txt"),
+                contentsOf: mihomoConfigsDirectory.appending(path: "current.txt"),
                 encoding: .utf8
             ).trimmingCharacters(in: .whitespacesAndNewlines)
             #expect(currentID == "default")
@@ -299,10 +300,35 @@ struct AppPreferenceStoreTests {
             _ = try repository.listProfiles()
 
             let defaultProfile = try String(
-                contentsOf: directory.appending(path: "profiles/default.yaml"),
+                contentsOf: Self.mihomoConfigsURL(in: directory).appending(path: "default.yaml"),
                 encoding: .utf8
             )
             #expect(!defaultProfile.contains("RuntimeOnly"))
+        }
+    }
+
+    @Test func rootProfilesDirectoryIsIgnored() throws {
+        try AppPreferenceStoreTestIsolation.withTemporaryDirectory(prefix: "clash-meow-profiles") { directory in
+            let rootProfilesDirectory = directory.appending(path: "profiles", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: rootProfilesDirectory, withIntermediateDirectories: true)
+            let ignoredProfile = rootProfilesDirectory.appending(path: "ignored.yaml")
+            try Self.profileYAML(groupName: "Ignored").write(
+                to: ignoredProfile,
+                atomically: true,
+                encoding: .utf8
+            )
+            let repository = ProfileRepository(
+                configDirectory: directory,
+                activeConfigFile: Self.runtimeConfigURL(in: directory)
+            )
+
+            let profiles = try repository.listProfiles()
+
+            #expect(!profiles.contains { $0.id == "ignored" })
+            #expect(FileManager.default.fileExists(atPath: ignoredProfile.path))
+            #expect(FileManager.default.fileExists(
+                atPath: Self.mihomoConfigsURL(in: directory).appending(path: "default.yaml").path
+            ))
         }
     }
 
@@ -328,6 +354,12 @@ struct AppPreferenceStoreTests {
             .appending(path: "runtime", directoryHint: .isDirectory)
             .appending(path: "mihomo", directoryHint: .isDirectory)
             .appending(path: "config.yaml")
+    }
+
+    private static func mihomoConfigsURL(in rootDirectory: URL) -> URL {
+        rootDirectory
+            .appending(path: "configs", directoryHint: .isDirectory)
+            .appending(path: "mihomo", directoryHint: .isDirectory)
     }
 
     private static func appLogURL(in rootDirectory: URL) -> URL {

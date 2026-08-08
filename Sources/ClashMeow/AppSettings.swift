@@ -17,6 +17,14 @@ enum AppPersistencePaths {
         configDirectory.appending(path: "runtime", directoryHint: .isDirectory)
     }
 
+    static var configsDirectory: URL {
+        configDirectory.appending(path: "configs", directoryHint: .isDirectory)
+    }
+
+    static var mihomoConfigsDirectory: URL {
+        configsDirectory.appending(path: "mihomo", directoryHint: .isDirectory)
+    }
+
     static var mihomoRuntimeDirectory: URL {
         runtimeDirectory.appending(path: "mihomo", directoryHint: .isDirectory)
     }

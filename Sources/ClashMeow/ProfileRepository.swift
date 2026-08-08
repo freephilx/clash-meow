@@ -62,17 +62,19 @@ struct ProfileRepository {
         }
     }
 
-    private let profilesDirectory: URL
+    private let mihomoConfigsDirectory: URL
     private let activeConfigFile: URL
     private let currentProfileFile: URL
     private let metadataFile: URL
     private let logsDirectory: URL
 
     init(configDirectory: URL, activeConfigFile: URL, logsDirectory: URL? = nil) {
-        self.profilesDirectory = configDirectory.appending(path: "profiles", directoryHint: .isDirectory)
+        self.mihomoConfigsDirectory = configDirectory
+            .appending(path: "configs", directoryHint: .isDirectory)
+            .appending(path: "mihomo", directoryHint: .isDirectory)
         self.activeConfigFile = activeConfigFile
-        self.currentProfileFile = profilesDirectory.appending(path: "current.txt")
-        self.metadataFile = profilesDirectory.appending(path: "profiles-metadata.json")
+        self.currentProfileFile = mihomoConfigsDirectory.appending(path: "current.txt")
+        self.metadataFile = mihomoConfigsDirectory.appending(path: "profiles-metadata.json")
         self.logsDirectory = logsDirectory
             ?? configDirectory
                 .appending(path: "runtime", directoryHint: .isDirectory)
@@ -329,7 +331,7 @@ struct ProfileRepository {
     }
 
     private func prepareStorage() throws {
-        try FileManager.default.createDirectory(at: profilesDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: mihomoConfigsDirectory, withIntermediateDirectories: true)
         let defaultURL = profileURL(for: "default")
         if !FileManager.default.fileExists(atPath: defaultURL.path) {
             try defaultProfileContent().write(to: defaultURL, atomically: true, encoding: .utf8)
@@ -543,19 +545,24 @@ struct ProfileRepository {
 
     private func profileFileURLs() throws -> [URL] {
         try FileManager.default.contentsOfDirectory(
-            at: profilesDirectory,
+            at: mihomoConfigsDirectory,
             includingPropertiesForKeys: [.contentModificationDateKey],
             options: [.skipsHiddenFiles]
         )
-        .filter { ["yaml", "yml"].contains($0.pathExtension.lowercased()) }
+        .filter { url in
+            let name = url.lastPathComponent.lowercased()
+            return ["yaml", "yml"].contains(url.pathExtension.lowercased())
+                && !name.hasSuffix(".rules.yaml")
+                && !name.hasSuffix(".rules.yml")
+        }
     }
 
     private func profileURL(for id: String) -> URL {
-        profilesDirectory.appending(path: "\(id).yaml")
+        mihomoConfigsDirectory.appending(path: "\(id).yaml")
     }
 
     private func ruleOverrideURL(for id: String) -> URL {
-        profilesDirectory.appending(path: "\(id).rules.yaml")
+        mihomoConfigsDirectory.appending(path: "\(id).rules.yaml")
     }
 
     private func loadRuleOverrides(for id: String) throws -> RuleOverrideSet {

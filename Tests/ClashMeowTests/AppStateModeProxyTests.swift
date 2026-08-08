@@ -48,6 +48,8 @@ struct AppStateModeProxyTests {
         let core = MihomoCoreManager()
 
         #expect(core.rootDirectory == directory)
+        #expect(AppPersistencePaths.configsDirectory == directory.appending(path: "configs", directoryHint: .isDirectory))
+        #expect(AppPersistencePaths.mihomoConfigsDirectory == Self.mihomoConfigsURL(in: directory))
         #expect(core.runtimeDirectory == directory.appending(path: "runtime", directoryHint: .isDirectory))
         #expect(core.configDirectory == directory
             .appending(path: "runtime", directoryHint: .isDirectory)
@@ -88,8 +90,8 @@ struct AppStateModeProxyTests {
         var api = MihomoAPI(baseURL: URL(string: "http://127.0.0.1:9090")!)
         api.urlSession = session
 
-        let profilesDirectory = directory.appending(path: "profiles", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: profilesDirectory, withIntermediateDirectories: true)
+        let mihomoConfigsDirectory = Self.mihomoConfigsURL(in: directory)
+        try FileManager.default.createDirectory(at: mihomoConfigsDirectory, withIntermediateDirectories: true)
         let profileID = "selected-profile"
         let profileYAML = """
         mixed-port: 7890
@@ -103,7 +105,7 @@ struct AppStateModeProxyTests {
           - MATCH,DIRECT
         """
         try profileYAML.write(
-            to: profilesDirectory.appending(path: "\(profileID).yaml"),
+            to: mihomoConfigsDirectory.appending(path: "\(profileID).yaml"),
             atomically: true,
             encoding: .utf8
         )
@@ -133,7 +135,7 @@ struct AppStateModeProxyTests {
 
         await state.setRule(rule, isEnabled: false)
         let disabledOverrideYAML = try String(
-            contentsOf: profilesDirectory.appending(path: "\(profileID).rules.yaml"),
+            contentsOf: mihomoConfigsDirectory.appending(path: "\(profileID).rules.yaml"),
             encoding: .utf8
         )
         let disabledRuntimeYAML = try String(contentsOf: Self.runtimeConfigURL(in: directory), encoding: .utf8)
@@ -144,7 +146,7 @@ struct AppStateModeProxyTests {
 
         await state.setRule(rule, isEnabled: true)
         let enabledRuntimeYAML = try String(contentsOf: Self.runtimeConfigURL(in: directory), encoding: .utf8)
-        #expect(!FileManager.default.fileExists(atPath: profilesDirectory.appending(path: "\(profileID).rules.yaml").path))
+        #expect(!FileManager.default.fileExists(atPath: mihomoConfigsDirectory.appending(path: "\(profileID).rules.yaml").path))
         #expect(enabledRuntimeYAML.contains("DOMAIN-SUFFIX,example.com,Proxy"))
         #expect(MockMihomoURLProtocolSupport.handledRequests.filter { $0.method == "PATCH" && $0.path == "/rules/disable" }.count == 2)
         #expect(!MockMihomoURLProtocolSupport.handledRequests.contains { $0.method == "PUT" && $0.path == "/configs" })
@@ -164,8 +166,8 @@ struct AppStateModeProxyTests {
         var api = MihomoAPI(baseURL: URL(string: "http://127.0.0.1:9090")!)
         api.urlSession = session
 
-        let profilesDirectory = directory.appending(path: "profiles", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: profilesDirectory, withIntermediateDirectories: true)
+        let mihomoConfigsDirectory = Self.mihomoConfigsURL(in: directory)
+        try FileManager.default.createDirectory(at: mihomoConfigsDirectory, withIntermediateDirectories: true)
         let profileID = "selected-profile"
         let profileYAML = """
         mixed-port: 7890
@@ -179,7 +181,7 @@ struct AppStateModeProxyTests {
           - MATCH,DIRECT
         """
         try profileYAML.write(
-            to: profilesDirectory.appending(path: "\(profileID).yaml"),
+            to: mihomoConfigsDirectory.appending(path: "\(profileID).yaml"),
             atomically: true,
             encoding: .utf8
         )
@@ -1060,6 +1062,12 @@ struct AppStateModeProxyTests {
             .appending(path: "runtime", directoryHint: .isDirectory)
             .appending(path: "mihomo", directoryHint: .isDirectory)
             .appending(path: "config.yaml")
+    }
+
+    private static func mihomoConfigsURL(in rootDirectory: URL) -> URL {
+        rootDirectory
+            .appending(path: "configs", directoryHint: .isDirectory)
+            .appending(path: "mihomo", directoryHint: .isDirectory)
     }
 
     @discardableResult
