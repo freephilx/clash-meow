@@ -21,6 +21,8 @@ Environment:
   PRERELEASE=1       Create a prerelease.
   DRAFT=1            Create a draft release.
   REPLACE_RELEASE=1  Delete and recreate an existing Release without deleting its tag.
+  FAIL_IF_RELEASE_EXISTS=1
+                      Reject an existing Release instead of updating its assets.
 EOF
 }
 
@@ -43,6 +45,11 @@ shift
 replace_release="${REPLACE_RELEASE:-0}"
 [[ "$replace_release" == "0" || "$replace_release" == "1" ]] \
   || fail "REPLACE_RELEASE must be 0 or 1"
+fail_if_release_exists="${FAIL_IF_RELEASE_EXISTS:-0}"
+[[ "$fail_if_release_exists" == "0" || "$fail_if_release_exists" == "1" ]] \
+  || fail "FAIL_IF_RELEASE_EXISTS must be 0 or 1"
+[[ "$replace_release" == "0" || "$fail_if_release_exists" == "0" ]] \
+  || fail "REPLACE_RELEASE and FAIL_IF_RELEASE_EXISTS cannot both be 1"
 
 repository="${GITHUB_REPOSITORY:-}"
 if [[ -z "$repository" ]]; then
@@ -71,13 +78,21 @@ else
   done
 fi
 
-if gh release view "$tag" --repo "$repository" >/dev/null 2>&1 \
-  && [[ "$replace_release" == "1" ]]; then
-  echo "Release $tag exists; deleting it before replacement"
-  gh release delete "$tag" --yes --repo "$repository"
+release_exists=0
+if gh release view "$tag" --repo "$repository" >/dev/null 2>&1; then
+  release_exists=1
 fi
 
-if gh release view "$tag" --repo "$repository" >/dev/null 2>&1; then
+if [[ "$release_exists" == "1" && "$fail_if_release_exists" == "1" ]]; then
+  fail "release $tag already exists; refusing to overwrite it"
+fi
+if [[ "$release_exists" == "1" && "$replace_release" == "1" ]]; then
+  echo "Release $tag exists; deleting it before replacement"
+  gh release delete "$tag" --yes --repo "$repository"
+  release_exists=0
+fi
+
+if [[ "$release_exists" == "1" ]]; then
   echo "Release $tag exists; replacing matching assets"
   gh release upload "$tag" "${assets[@]}" --clobber --repo "$repository"
 else

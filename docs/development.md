@@ -163,6 +163,7 @@ Release 不存在时，脚本使用 GitHub 自动生成的更新说明创建 Rel
 - `PRERELEASE=1`：创建 prerelease。
 - `DRAFT=1`：创建 draft Release。
 - `MOVING_TAG=1`：强制把 tag 移到目标 commit，并删除、重建同名 Release；仅用于滚动预发布通道。
+- `FAIL_IF_RELEASE_EXISTS=1`：同名 Release 已存在时失败；正式版 workflow 使用该模式。
 
 也可以用一个命令依次完成双架构打包与上传：
 
@@ -208,6 +209,26 @@ PACKAGE_VERSION=0.1.0 RELEASE_TAG=v0.1.0 RELEASE_TARGET=main make release
 
 workflow 只使用仓库内置的 `GITHUB_TOKEN`，仓库需要允许 Actions 具有
 `contents: write` 权限。发布包仍然使用 ad-hoc 签名且不执行 Apple 公证。
+
+## GitHub Actions 正式发布
+
+`.github/workflows/release-tag.yml` 负责不可变的正式版本发布：
+
+- 推送 `v<主版本>.<次版本>.<修订版本>` tag 时自动运行。
+- 也可以在 Actions 中手动运行，并输入已经存在的 tag；适合补发创建 workflow
+  之前已经推送的 tag。
+- workflow 会校验 tag 与 Xcode 的 `MARKETING_VERSION` 完全一致。
+- Swift 测试与两个架构的构建方式和自动预发布相同。
+- 同名正式 Release 已存在时会直接失败，不移动 tag，也不覆盖已有正式产物。
+- 正式 Release 不标记为 prerelease，但产物仍然使用 ad-hoc 签名且不执行 Apple 公证。
+
+例如，当前已经存在的 `v0.1.0` 可以打开 GitHub Actions 的“正式版本发布”，选择
+“Run workflow”，输入 `v0.1.0` 后执行。新的版本通常直接创建并推送 tag：
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
 
 ## 生产化说明
 

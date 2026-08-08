@@ -81,3 +81,8 @@ Apple Silicon 与 Intel 两个 DMG。当前发布流程按项目要求仅使用 
 再汇总两个 DMG，以固定的 `Prerelease` tag 创建 prerelease。workflow 会串行执行
 发布阶段；每次发布都把该 tag 强制移动到触发 commit，并删除、重建同名 Release，
 因此自动预发布通道只保留最新产物。本地正式发布仍使用不可变的 `v<版本>` tag。
+
+推送 `v<主版本>.<次版本>.<修订版本>` tag 时，`.github/workflows/release-tag.yml`
+会校验 tag 与 `MARKETING_VERSION` 一致，并使用相同的测试和双架构并行构建流程
+创建正式 GitHub Release。该 workflow 也支持手动输入已有 tag 进行补发；同名正式
+Release 已存在时会拒绝覆盖。正式产物仍然使用 ad-hoc 签名且不执行 Apple 公证。

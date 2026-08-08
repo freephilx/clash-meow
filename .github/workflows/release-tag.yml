@@ -1,0 +1,162 @@
+name: 正式版本发布
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 要发布的现有版本 tag，例如 v0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+concurrency:
+  group: clash-meow-release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  metadata:
+    name: 校验正式版本
+    runs-on: macos-15
+    timeout-minutes: 10
+    outputs:
+      package_version: ${{ steps.version.outputs.package_version }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
+      release_commit: ${{ steps.version.outputs.release_commit }}
+
+    steps:
+      - name: 检出版本 tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+
+      - name: 校验 tag 与应用版本
+        id: version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$RELEASE_TAG"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "error: 正式版本 tag 必须使用 v<主版本>.<次版本>.<修订版本> 格式: $tag" >&2
+            exit 1
+          fi
+
+          version="$(xcodebuild \
+            -project ClashMeow.xcodeproj \
+            -scheme ClashMeow \
+            -configuration Release \
+            -showBuildSettings 2>/dev/null \
+            | awk -F'= ' '{ lhs=$1; gsub(/^[ \t]+|[ \t]+$/, "", lhs); if (lhs == "MARKETING_VERSION") { print $2; exit } }')"
+          if [[ "$tag" != "v$version" ]]; then
+            echo "error: tag $tag 与应用 MARKETING_VERSION $version 不一致" >&2
+            exit 1
+          fi
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "error: 正式 Release $tag 已存在，拒绝覆盖" >&2
+            exit 1
+          fi
+
+          echo "package_version=$version" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "release_commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: 运行 Swift 测试
+    needs: metadata
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出版本 tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.metadata.outputs.release_tag }}
+
+      - name: 运行测试
+        run: swift test --no-parallel
+
+  build:
+    name: 构建 ${{ matrix.display_name }} DMG
+    needs: metadata
+    runs-on: macos-15
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: arm64
+            display_name: Apple Silicon
+          - architecture: x86_64
+            display_name: Intel
+
+    steps:
+      - name: 检出版本 tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.metadata.outputs.release_tag }}
+
+      - name: 准备 Mihomo 运行时
+        run: ./scripts/prepare-mihomo-runtime.sh --arch "${{ matrix.architecture }}"
+
+      - name: 构建 DMG
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+          PACKAGE_ARCHS: ${{ matrix.architecture }}
+          SKIP_TESTS: "1"
+        run: ./scripts/build-release.sh "${{ needs.metadata.outputs.package_version }}"
+
+      - name: 保存 DMG
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-dmg-${{ matrix.architecture }}
+          path: dist/release/*.dmg
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+          retention-days: 1
+
+  publish:
+    name: 发布正式 GitHub Release
+    needs:
+      - metadata
+      - test
+      - build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 检出版本 tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.metadata.outputs.release_tag }}
+          fetch-depth: 0
+
+      - name: 下载双架构 DMG
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-dmg-*
+          path: dist/release
+          merge-multiple: true
+
+      - name: 创建正式 Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PACKAGE_VERSION: ${{ needs.metadata.outputs.package_version }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.release_tag }}
+          RELEASE_TARGET: ${{ needs.metadata.outputs.release_commit }}
+          RELEASE_REMOTE: origin
+          FAIL_IF_RELEASE_EXISTS: "1"
+          SKIP_BUILD: "1"
+        run: ./scripts/release.sh
