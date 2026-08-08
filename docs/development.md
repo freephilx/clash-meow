@@ -146,10 +146,11 @@ Apple 发布流程。
 
 Release 不存在时，脚本使用 GitHub 自动生成的更新说明创建 Release；Release
 和 tag 会默认创建在当前分支。Release 已经存在时，使用 `--clobber` 覆盖同名
-附件。也可以显式指定上传文件：
+附件。默认会先使用本地 `.sha256` 文件校验产物，但只上传两个 DMG，不上传
+`.sha256` 文件。也可以显式指定上传文件：
 
 ```bash
-./scripts/upload-github.sh v0.1.0 path/to/package.dmg path/to/checksum.txt
+./scripts/upload-github.sh v0.1.0 path/to/apple-silicon.dmg path/to/intel.dmg
 ```
 
 脚本使用已登录的 `gh` CLI，也支持通过 `GH_TOKEN` 鉴权。可选环境变量包括：
@@ -182,8 +183,17 @@ PACKAGE_VERSION=0.1.0 RELEASE_TAG=v0.1.0 RELEASE_TARGET=main make release
 ## GitHub Actions 自动发布
 
 `.github/workflows/release.yml` 监听 `release` 分支的每次 push，使用 GitHub
-托管的 macOS runner 自动执行 `make release`。该目标会先执行 `make setup`，
-然后完成双架构打包并上传 GitHub Release。
+托管 runner 按以下阶段自动发布：
+
+1. 读取一次应用版本。
+2. Swift 测试与构建阶段并行运行。
+3. 构建阶段使用 matrix，在两个独立 macOS runner 上并行生成 arm64 与 x86_64
+   DMG；每个 runner 只准备对应架构的 Mihomo，且不重复运行测试。
+4. 两个 DMG 作为保留 1 天、不重复压缩的临时 Actions Artifact 汇总到 Linux
+   发布 Job。只有测试和两个构建全部成功后，才创建 tag 并上传 GitHub Release。
+
+临时 Artifact 和最终 GitHub Release 都只包含 DMG，不包含本地生成的 `.sha256`
+文件。
 
 自动发布使用以下版本约定：
 

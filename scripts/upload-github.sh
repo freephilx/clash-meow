@@ -10,9 +10,9 @@ Usage: scripts/upload-github.sh <tag> [asset ...]
 
 Create or update a GitHub Release and upload release assets.
 
-When no assets are supplied, the command uploads the Apple Silicon and Intel
-DMGs plus their SHA-256 files from dist/release/. The gh CLI must be
-authenticated, or GH_TOKEN must be set.
+When no assets are supplied, the command verifies the SHA-256 files in
+dist/release/, then uploads only the Apple Silicon and Intel DMGs. The gh CLI
+must be authenticated, or GH_TOKEN must be set.
 
 Environment:
   GITHUB_REPOSITORY  Override the target owner/repository.
@@ -63,7 +63,7 @@ else
     [[ -f "$dmg" ]] || fail "release package not found: $dmg"
     [[ -f "$checksum" ]] || fail "release checksum not found: $checksum"
     (cd "$release_root" && shasum -a 256 -c "$(basename "$checksum")")
-    assets+=("$dmg" "$checksum")
+    assets+=("$dmg")
   done
 fi
 

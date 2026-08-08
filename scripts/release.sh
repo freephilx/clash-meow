@@ -25,6 +25,7 @@ Environment:
   RELEASE_NOTES_FILE Use a Markdown file instead of generated release notes.
   PRERELEASE=1       Create a prerelease.
   DRAFT=1            Create a draft release.
+  SKIP_BUILD=1       Publish existing DMGs without rebuilding them.
   SKIP_TESTS=1       Skip the Swift test suite during packaging.
 EOF
 }
@@ -50,11 +51,20 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 [[ $# -eq 0 ]] || { usage >&2; exit 2; }
 
-command -v xcodebuild >/dev/null 2>&1 || fail "xcodebuild is required"
 command -v gh >/dev/null 2>&1 || fail "gh CLI is required"
 command -v git >/dev/null 2>&1 || fail "git is required"
 
-version="${PACKAGE_VERSION:-$(build_setting MARKETING_VERSION)}"
+skip_build="${SKIP_BUILD:-0}"
+[[ "$skip_build" == "0" || "$skip_build" == "1" ]] \
+  || fail "SKIP_BUILD must be 0 or 1"
+if [[ "$skip_build" == "1" ]]; then
+  [[ -n "${PACKAGE_VERSION:-}" ]] \
+    || fail "PACKAGE_VERSION is required when SKIP_BUILD=1"
+  version="$PACKAGE_VERSION"
+else
+  command -v xcodebuild >/dev/null 2>&1 || fail "xcodebuild is required"
+  version="${PACKAGE_VERSION:-$(build_setting MARKETING_VERSION)}"
+fi
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] \
   || fail "invalid package version: $version"
 release_tag="${RELEASE_TAG:-v$version}"
@@ -105,16 +115,18 @@ ensure_release_tag() {
 echo "==> Release: $release_tag"
 echo "==> Version: $version"
 echo "==> Target: $release_target"
-"$ROOT/scripts/build-release.sh" "$version"
-ensure_release_tag
+if [[ "$skip_build" == "1" ]]; then
+  echo "==> Using prebuilt release packages"
+else
+  "$ROOT/scripts/build-release.sh" "$version"
+fi
 
 assets=(
   "$ROOT/dist/release/Clash-Meow-$version-Apple-Silicon.dmg"
-  "$ROOT/dist/release/Clash-Meow-$version-Apple-Silicon.dmg.sha256"
   "$ROOT/dist/release/Clash-Meow-$version-Intel.dmg"
-  "$ROOT/dist/release/Clash-Meow-$version-Intel.dmg.sha256"
 )
 for asset in "${assets[@]}"; do
   [[ -f "$asset" ]] || fail "release asset not found: $asset"
 done
+ensure_release_tag
 "$ROOT/scripts/upload-github.sh" "$release_tag" "${assets[@]}"

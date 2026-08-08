@@ -228,7 +228,7 @@ xcodebuild \
 
 if [[ "${SKIP_TESTS:-0}" != "1" ]]; then
   echo "==> Running Swift tests"
-  swift test
+  swift test --no-parallel
 fi
 
 for architecture in "${ARCHITECTURES[@]}"; do

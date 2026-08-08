@@ -77,4 +77,5 @@ Apple Silicon 与 Intel 两个 DMG。当前发布流程按项目要求仅使用 
 分支或 commit，通过 `RELEASE_REMOTE` 指定 Git remote。
 
 `release` 分支发生 push 时，GitHub Actions 会自动调用同一套 `make release`
-流程，并以 `v<版本>-build.<run_number>` 创建 prerelease。
+约定，但会把 Swift 测试、arm64 打包和 x86_64 打包拆成并行 Job；全部成功后
+再汇总两个 DMG，并以 `v<版本>-build.<run_number>` 创建 prerelease。

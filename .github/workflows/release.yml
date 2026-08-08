@@ -9,18 +9,20 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    name: 构建并上传双架构 DMG
+  metadata:
+    name: 读取应用版本
     runs-on: macos-15
-    timeout-minutes: 90
+    timeout-minutes: 10
+    outputs:
+      package_version: ${{ steps.version.outputs.package_version }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
 
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        uses: actions/checkout@v7
 
       - name: 读取应用版本
+        id: version
         shell: bash
         run: |
           set -euo pipefail
@@ -34,16 +36,91 @@ jobs:
             echo "error: 无法读取有效的 MARKETING_VERSION: $version" >&2
             exit 1
           fi
-          echo "PACKAGE_VERSION=$version" >> "$GITHUB_ENV"
-          echo "RELEASE_TAG=v$version-build.${{ github.run_number }}" >> "$GITHUB_ENV"
+          echo "package_version=$version" >> "$GITHUB_OUTPUT"
+          echo "release_tag=v$version-build.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
 
-      - name: 构建并发布
+  test:
+    name: 运行 Swift 测试
+    needs: metadata
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 运行测试
+        run: swift test --no-parallel
+
+  build:
+    name: 构建 ${{ matrix.display_name }} DMG
+    needs: metadata
+    runs-on: macos-15
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: arm64
+            display_name: Apple Silicon
+          - architecture: x86_64
+            display_name: Intel
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 准备 Mihomo 运行时
+        run: ./scripts/prepare-mihomo-runtime.sh --arch "${{ matrix.architecture }}"
+
+      - name: 构建 DMG
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+          PACKAGE_ARCHS: ${{ matrix.architecture }}
+          SKIP_TESTS: "1"
+        run: ./scripts/build-release.sh "${{ needs.metadata.outputs.package_version }}"
+
+      - name: 保存 DMG
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-dmg-${{ matrix.architecture }}
+          path: dist/release/*.dmg
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+          retention-days: 1
+
+  publish:
+    name: 发布 GitHub Release
+    needs:
+      - metadata
+      - test
+      - build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: 下载双架构 DMG
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-dmg-*
+          path: dist/release
+          merge-multiple: true
+
+      - name: 创建 Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          PACKAGE_VERSION: ${{ needs.metadata.outputs.package_version }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.release_tag }}
           RELEASE_TARGET: ${{ github.sha }}
           RELEASE_REMOTE: origin
-          BUILD_NUMBER: ${{ github.run_number }}
           PRERELEASE: "1"
-        run: make release
+          SKIP_BUILD: "1"
+        run: ./scripts/release.sh
