@@ -116,7 +116,7 @@ struct RuleOverrideDraft: Equatable {
     ]
 }
 
-struct RuleOverrideSet: Equatable {
+struct RuleOverrideSet: Codable, Equatable {
     var prepend: [String] = []
     var append: [String] = []
     var delete: [String] = []

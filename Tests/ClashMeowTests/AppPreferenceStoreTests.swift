@@ -31,7 +31,9 @@ struct AppPreferenceStoreTests {
             SystemProxyUserPreference.setEnabled(true)
             TunPreference.setEnabled(true)
             TunUserPreference.setEnabled(true)
-            ProfileSelectionPreference.setSelectedProfileID("remote-profile")
+            try AppPreferenceStore.updateMihomoSettings { settings in
+                settings.selectedProfileID = "remote-profile"
+            }
             CoreAutoStartManager.setEnabled(false)
             LogPreference.retentionDays = 12
             LogPreference.defaultLevel = .warning
@@ -46,7 +48,7 @@ struct AppPreferenceStoreTests {
             #expect(preferences.systemProxyUserEnabled == true)
             #expect(preferences.tunEnabled == true)
             #expect(preferences.tunUserEnabled == true)
-            #expect(preferences.selectedProfileID == "remote-profile")
+            #expect(preferences.mihomoSettings?.selectedProfileID == "remote-profile")
             #expect(preferences.coreEnabled == false)
             #expect(preferences.logRetentionDays == 12)
             #expect(preferences.logDefaultLevel == LogLevelFilter.warning.rawValue)
@@ -109,20 +111,20 @@ struct AppPreferenceStoreTests {
                 atomically: true,
                 encoding: .utf8
             )
-            ProfileSelectionPreference.setSelectedProfileID(selectedID)
+            try AppPreferenceStore.updateMihomoSettings { settings in
+                settings.selectedProfileID = selectedID
+            }
 
             try repository.restoreSelectedProfileIfNeeded()
 
-            let currentID = try String(contentsOf: mihomoConfigsDirectory.appending(path: "current.txt"), encoding: .utf8)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
             let activeYAML = try String(contentsOf: activeConfig, encoding: .utf8)
 
-            #expect(currentID == selectedID)
             #expect(activeYAML.contains("name: Selected"))
             #expect(activeYAML.contains("mixed-port: 7890"))
             #expect(activeYAML.contains("external-controller: 127.0.0.1:9090"))
             #expect(activeYAML.contains("tun:"))
-            #expect(ProfileSelectionPreference.selectedProfileID == selectedID)
+            #expect(AppPreferenceStore.readMihomoSettings().selectedProfileID == selectedID)
+            #expect(!FileManager.default.fileExists(atPath: mihomoConfigsDirectory.appending(path: "current.txt").path))
         }
     }
 
@@ -139,7 +141,6 @@ struct AppPreferenceStoreTests {
                 atomically: true,
                 encoding: .utf8
             )
-            try selectedID.write(to: mihomoConfigsDirectory.appending(path: "current.txt"), atomically: true, encoding: .utf8)
             try FileManager.default.createDirectory(
                 at: activeConfig.deletingLastPathComponent(),
                 withIntermediateDirectories: true
@@ -149,7 +150,9 @@ struct AppPreferenceStoreTests {
                 atomically: true,
                 encoding: .utf8
             )
-            ProfileSelectionPreference.setSelectedProfileID(selectedID)
+            try AppPreferenceStore.updateMihomoSettings { settings in
+                settings.selectedProfileID = selectedID
+            }
 
             try repository.restoreSelectedProfileIfNeeded()
 
@@ -185,13 +188,10 @@ struct AppPreferenceStoreTests {
             )
 
             let activeYAML = try String(contentsOf: activeConfig, encoding: .utf8)
-            let overrideYAML = try String(
-                contentsOf: mihomoConfigsDirectory.appending(path: "\(selectedID).rules.yaml"),
-                encoding: .utf8
-            )
+            let metadata = AppPreferenceStore.readMihomoSettings().profiles.first { $0.id == selectedID }
             #expect(activeYAML.contains("DOMAIN-SUFFIX,example.com,Proxy"))
-            #expect(overrideYAML.contains("prepend:"))
-            #expect(overrideYAML.contains("DOMAIN-SUFFIX,example.com,Proxy"))
+            #expect(metadata?.ruleOverrides.prepend == ["DOMAIN-SUFFIX,example.com,Proxy"])
+            #expect(!FileManager.default.fileExists(atPath: mihomoConfigsDirectory.appending(path: "\(selectedID).rules.yaml").path))
             #expect(!(try repository.listProfiles()).contains { $0.id == "selected-profile.rules" })
         }
     }
@@ -218,13 +218,9 @@ struct AppPreferenceStoreTests {
             )
 
             let disabledActiveYAML = try String(contentsOf: activeConfig, encoding: .utf8)
-            let overrideYAML = try String(
-                contentsOf: mihomoConfigsDirectory.appending(path: "\(selectedID).rules.yaml"),
-                encoding: .utf8
-            )
+            let disabledMetadata = AppPreferenceStore.readMihomoSettings().profiles.first { $0.id == selectedID }
             #expect(!disabledActiveYAML.contains("DOMAIN-SUFFIX,example.com,Proxy"))
-            #expect(overrideYAML.contains("delete:"))
-            #expect(overrideYAML.contains("DOMAIN-SUFFIX,example.com,Proxy"))
+            #expect(disabledMetadata?.ruleOverrides.delete == ["DOMAIN-SUFFIX,example.com,Proxy"])
 
             try repository.setRuleDeletedOverride(
                 profileID: selectedID,
@@ -233,23 +229,27 @@ struct AppPreferenceStoreTests {
             )
 
             let enabledActiveYAML = try String(contentsOf: activeConfig, encoding: .utf8)
+            let enabledMetadata = AppPreferenceStore.readMihomoSettings().profiles.first { $0.id == selectedID }
             #expect(enabledActiveYAML.contains("DOMAIN-SUFFIX,example.com,Proxy"))
+            #expect(enabledMetadata?.ruleOverrides.isEmpty == true)
             #expect(!FileManager.default.fileExists(atPath: mihomoConfigsDirectory.appending(path: "\(selectedID).rules.yaml").path))
         }
     }
 
-    @Test func profileRepositoryClearsMissingSelectedProfileOnStartup() throws {
+    @Test func profileRepositoryFallsBackFromMissingSelectedProfileOnStartup() throws {
         try AppPreferenceStoreTestIsolation.withTemporaryDirectory(prefix: "clash-meow-profiles") { directory in
             let repository = ProfileRepository(
                 configDirectory: directory,
                 activeConfigFile: Self.runtimeConfigURL(in: directory)
             )
             _ = try repository.listProfiles()
-            ProfileSelectionPreference.setSelectedProfileID("missing-profile")
+            try AppPreferenceStore.updateMihomoSettings { settings in
+                settings.selectedProfileID = "missing-profile"
+            }
 
             try repository.restoreSelectedProfileIfNeeded()
 
-            #expect(ProfileSelectionPreference.selectedProfileID == nil)
+            #expect(AppPreferenceStore.readMihomoSettings().selectedProfileID == "default")
         }
     }
 
@@ -266,20 +266,39 @@ struct AppPreferenceStoreTests {
                 atomically: true,
                 encoding: .utf8
             )
-            try "ignored-current".write(
-                to: mihomoConfigsDirectory.appending(path: "current.txt"),
-                atomically: true,
-                encoding: .utf8
-            )
+            let legacyCurrent = mihomoConfigsDirectory.appending(path: "current.txt")
+            let legacyMetadata = mihomoConfigsDirectory.appending(path: "profiles-metadata.json")
+            let legacyRules = mihomoConfigsDirectory.appending(path: "ignored-current.rules.yaml")
+            try "ignored-current".write(to: legacyCurrent, atomically: true, encoding: .utf8)
+            try "legacy-metadata".write(to: legacyMetadata, atomically: true, encoding: .utf8)
+            try "delete: []".write(to: legacyRules, atomically: true, encoding: .utf8)
 
             try repository.restoreSelectedProfileIfNeeded()
 
-            #expect(ProfileSelectionPreference.selectedProfileID == "default")
-            let currentID = try String(
-                contentsOf: mihomoConfigsDirectory.appending(path: "current.txt"),
-                encoding: .utf8
-            ).trimmingCharacters(in: .whitespacesAndNewlines)
-            #expect(currentID == "default")
+            #expect(AppPreferenceStore.readMihomoSettings().selectedProfileID == "default")
+            #expect(try String(contentsOf: legacyCurrent, encoding: .utf8) == "ignored-current")
+            #expect(try String(contentsOf: legacyMetadata, encoding: .utf8) == "legacy-metadata")
+            #expect(try String(contentsOf: legacyRules, encoding: .utf8) == "delete: []")
+            #expect(!(try repository.listProfiles()).contains { $0.id == "ignored-current.rules" })
+        }
+    }
+
+    @Test func invalidProfileActivationKeepsSelectedProfile() throws {
+        try AppPreferenceStoreTestIsolation.withTemporaryDirectory(prefix: "clash-meow-profiles") { directory in
+            let repository = ProfileRepository(
+                configDirectory: directory,
+                activeConfigFile: Self.runtimeConfigURL(in: directory)
+            )
+            _ = try repository.listProfiles()
+
+            do {
+                try repository.activateProfile(id: "missing-profile")
+                Issue.record("Expected missing profile activation to fail")
+            } catch {
+                #expect(error is ProfileRepositoryError)
+            }
+
+            #expect(AppPreferenceStore.readMihomoSettings().selectedProfileID == "default")
         }
     }
 
@@ -304,6 +323,28 @@ struct AppPreferenceStoreTests {
                 encoding: .utf8
             )
             #expect(!defaultProfile.contains("RuntimeOnly"))
+        }
+    }
+
+    @Test func profileDirectoryContainsOnlySourceYAMLAfterNormalOperations() throws {
+        try AppPreferenceStoreTestIsolation.withTemporaryDirectory(prefix: "clash-meow-profiles") { directory in
+            let repository = ProfileRepository(
+                configDirectory: directory,
+                activeConfigFile: Self.runtimeConfigURL(in: directory)
+            )
+            _ = try repository.listProfiles()
+            let createdProfile = try repository.createBlankLocalProfile()
+
+            let filenames = try FileManager.default.contentsOfDirectory(
+                atPath: Self.mihomoConfigsURL(in: directory).path
+            ).sorted()
+            let metadata = AppPreferenceStore.readMihomoSettings().profiles.first {
+                $0.id == createdProfile.id
+            }
+
+            #expect(filenames == ["\(createdProfile.id).yaml", "default.yaml"].sorted())
+            #expect(metadata?.name == createdProfile.name)
+            #expect(AppPreferenceStore.readMihomoSettings().selectedProfileID == "default")
         }
     }
 

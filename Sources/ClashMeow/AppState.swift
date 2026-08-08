@@ -802,7 +802,6 @@ final class AppState: ObservableObject {
                 useProxy: useProxy,
                 proxyPort: useProxy ? mixedPort : nil
             )
-            ProfileSelectionPreference.setSelectedProfileID(summary.id)
             refreshProfiles()
             updateActiveProfileFileMonitor()
             loadActiveProfileSnapshot(resetRuntimeData: true)
@@ -824,7 +823,6 @@ final class AppState: ObservableObject {
         do {
             suppressFileChangeNotifications()
             let summary = try profileRepository.importLocalProfile(from: url)
-            ProfileSelectionPreference.setSelectedProfileID(summary.id)
             refreshProfiles()
             updateActiveProfileFileMonitor()
             loadActiveProfileSnapshot(resetRuntimeData: true)
@@ -862,7 +860,6 @@ final class AppState: ObservableObject {
             suppressFileChangeNotifications()
             core.releaseListeningPorts(for: profileRepository.profileFileURL(id: profile.id))
             try profileRepository.activateProfile(id: profile.id)
-            ProfileSelectionPreference.setSelectedProfileID(profile.id)
             refreshProfiles()
             updateActiveProfileFileMonitor()
             loadActiveProfileSnapshot(resetRuntimeData: true)
@@ -910,7 +907,6 @@ final class AppState: ObservableObject {
     func deleteProfile(_ profile: ClashMeowProfileSummary) async {
         do {
             let deletedCurrent = try profileRepository.deleteProfile(id: profile.id)
-            ProfileSelectionPreference.clearIfSelected(profile.id)
             refreshProfiles()
             updateActiveProfileFileMonitor()
             if deletedCurrent {

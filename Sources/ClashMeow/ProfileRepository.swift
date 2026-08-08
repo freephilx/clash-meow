@@ -35,6 +35,8 @@ struct SubscriptionUserInfo: Codable, Equatable {
 }
 
 struct ProfileRepository {
+    private typealias ProfileMetadata = AppPreferenceStore.MihomoProfileMetadata
+
     static var defaultSubscriptionUserAgent: String {
         "ClashMeow/\(AppInfo.version) (clash.meta)"
     }
@@ -48,24 +50,8 @@ struct ProfileRepository {
         "mihomo/1.9.27"
     ]
 
-    private struct ProfileMetadata: Codable {
-        var id: String
-        var name: String
-        var kind: ClashMeowProfileKind
-        var remoteURLString: String?
-        var updatedAt: Date?
-        var useProxy: Bool
-        var subscriptionUserInfo: SubscriptionUserInfo?
-
-        var remoteURL: URL? {
-            remoteURLString.flatMap(URL.init(string:))
-        }
-    }
-
     private let mihomoConfigsDirectory: URL
     private let activeConfigFile: URL
-    private let currentProfileFile: URL
-    private let metadataFile: URL
     private let logsDirectory: URL
 
     init(configDirectory: URL, activeConfigFile: URL, logsDirectory: URL? = nil) {
@@ -73,8 +59,6 @@ struct ProfileRepository {
             .appending(path: "configs", directoryHint: .isDirectory)
             .appending(path: "mihomo", directoryHint: .isDirectory)
         self.activeConfigFile = activeConfigFile
-        self.currentProfileFile = mihomoConfigsDirectory.appending(path: "current.txt")
-        self.metadataFile = mihomoConfigsDirectory.appending(path: "profiles-metadata.json")
         self.logsDirectory = logsDirectory
             ?? configDirectory
                 .appending(path: "runtime", directoryHint: .isDirectory)
@@ -102,7 +86,6 @@ struct ProfileRepository {
         let destination = profileURL(for: id)
         try prepareStorage()
         try yaml.write(to: destination, atomically: true, encoding: .utf8)
-        try? FileManager.default.removeItem(at: ruleOverrideURL(for: id))
         var metadata = try loadMetadata()
         metadata[id] = ProfileMetadata(
             id: id,
@@ -125,7 +108,6 @@ struct ProfileRepository {
         let destination = profileURL(for: id)
         try prepareStorage()
         try "".write(to: destination, atomically: true, encoding: .utf8)
-        try? FileManager.default.removeItem(at: ruleOverrideURL(for: id))
         var metadata = try loadMetadata()
         metadata[id] = ProfileMetadata(
             id: id,
@@ -149,7 +131,6 @@ struct ProfileRepository {
         let destination = profileURL(for: id)
         try prepareStorage()
         try document.yaml.write(to: destination, atomically: true, encoding: .utf8)
-        try? FileManager.default.removeItem(at: ruleOverrideURL(for: id))
         var metadata = try loadMetadata()
         metadata[id] = ProfileMetadata(
             id: id,
@@ -190,7 +171,8 @@ struct ProfileRepository {
             remoteURLString: remoteURL.absoluteString,
             updatedAt: Date(),
             useProxy: item.useProxy,
-            subscriptionUserInfo: document.subscriptionUserInfo
+            subscriptionUserInfo: document.subscriptionUserInfo,
+            ruleOverrides: item.ruleOverrides
         )
         try saveMetadata(nextMetadata)
 
@@ -207,29 +189,22 @@ struct ProfileRepository {
             throw ProfileRepositoryError.profileNotFound
         }
         try writeRuntimeConfig(try runtimeYAML(for: id), profileID: id, reason: "activateProfile")
-        try id.write(to: currentProfileFile, atomically: true, encoding: .utf8)
+        try AppPreferenceStore.updateMihomoSettings { settings in
+            settings.selectedProfileID = id
+        }
     }
 
     func restoreSelectedProfileIfNeeded() throws {
         try prepareStorage()
-        let selectedID: String
-        if let storedSelectedID = ProfileSelectionPreference.selectedProfileID,
-           !storedSelectedID.isEmpty {
-            selectedID = storedSelectedID
-        } else {
+        var selectedID = try currentProfileID()
+        if !FileManager.default.fileExists(atPath: profileURL(for: selectedID).path) {
             selectedID = "default"
-            ProfileSelectionPreference.setSelectedProfileID(selectedID)
-        }
-        guard FileManager.default.fileExists(atPath: profileURL(for: selectedID).path) else {
-            ProfileSelectionPreference.setSelectedProfileID(nil)
-            return
+            try AppPreferenceStore.updateMihomoSettings { settings in
+                settings.selectedProfileID = selectedID
+            }
         }
         let runtimeYAML = try runtimeYAML(for: selectedID)
-        if try currentProfileID() != selectedID {
-            logRuntimeConfig("冷启动恢复选中 Profile，准备重写 runtime config profile=\(selectedID)")
-            try writeRuntimeConfig(runtimeYAML, profileID: selectedID, reason: "startupSelectedProfile")
-            try selectedID.write(to: currentProfileFile, atomically: true, encoding: .utf8)
-        } else if try activeConfigNeedsRefresh(expectedYAML: runtimeYAML) {
+        if try activeConfigNeedsRefresh(expectedYAML: runtimeYAML) {
             logRuntimeConfig("冷启动检测到 runtime config 过期，准备重写 profile=\(selectedID)")
             try writeRuntimeConfig(runtimeYAML, profileID: selectedID, reason: "startupRefresh")
         } else {
@@ -262,14 +237,14 @@ struct ProfileRepository {
         guard FileManager.default.fileExists(atPath: profileURL(for: profileID).path) else {
             throw ProfileRepositoryError.profileNotFound
         }
-        var overrides = try loadRuleOverrides(for: profileID)
-        mutate(&overrides)
-        let overrideYAML = try overrides.renderedYAML()
-        if overrideYAML.isEmpty {
-            try? FileManager.default.removeItem(at: ruleOverrideURL(for: profileID))
-        } else {
-            try overrideYAML.write(to: ruleOverrideURL(for: profileID), atomically: true, encoding: .utf8)
-        }
+        var metadata = try loadMetadata()
+        var item = metadata[profileID] ?? inferredMetadata(
+            id: profileID,
+            url: profileURL(for: profileID)
+        )
+        mutate(&item.ruleOverrides)
+        metadata[profileID] = item
+        try saveMetadata(metadata)
         if try currentProfileID() == profileID {
             try writeRuntimeConfig(try runtimeYAML(for: profileID), profileID: profileID, reason: reason)
         }
@@ -319,7 +294,6 @@ struct ProfileRepository {
 
         let wasCurrent = try currentProfileID() == id
         try? FileManager.default.removeItem(at: profileURL(for: id))
-        try? FileManager.default.removeItem(at: ruleOverrideURL(for: id))
         var metadata = try loadMetadata()
         metadata[id] = nil
         try saveMetadata(metadata)
@@ -339,21 +313,28 @@ struct ProfileRepository {
                   !Self.isLikelyMihomoYAML(defaultContent) {
             try defaultProfileContent().write(to: defaultURL, atomically: true, encoding: .utf8)
         }
-        if !FileManager.default.fileExists(atPath: currentProfileFile.path) {
-            try "default".write(to: currentProfileFile, atomically: true, encoding: .utf8)
+        let profileURLs = try profileFileURLs()
+        let profileIDs = Set(profileURLs.map { $0.deletingPathExtension().lastPathComponent })
+        let storedSettings = AppPreferenceStore.readMihomoSettings()
+        var metadata = storedSettings.profiles.reduce(into: [String: ProfileMetadata]()) { result, item in
+            result[item.id] = item
         }
-        var metadata = try loadMetadata()
-        if metadata["default"] == nil {
-            metadata["default"] = ProfileMetadata(
-                id: "default",
-                name: "Default",
-                kind: .local,
-                remoteURLString: nil,
-                updatedAt: modificationDate(for: defaultURL),
-                useProxy: false,
-                subscriptionUserInfo: nil
-            )
-            try saveMetadata(metadata)
+        metadata = metadata.filter { profileIDs.contains($0.key) }
+        for url in profileURLs {
+            let id = url.deletingPathExtension().lastPathComponent
+            if metadata[id] == nil {
+                metadata[id] = inferredMetadata(id: id, url: url)
+            }
+        }
+        var nextSettings = storedSettings
+        nextSettings.profiles = metadata.values.sorted { $0.id < $1.id }
+        let selectedID = nextSettings.selectedProfileID?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        nextSettings.selectedProfileID = selectedID?.isEmpty == false ? selectedID : "default"
+        if nextSettings != storedSettings {
+            try AppPreferenceStore.updateMihomoSettings { settings in
+                settings = nextSettings
+            }
         }
     }
 
@@ -561,38 +542,41 @@ struct ProfileRepository {
         mihomoConfigsDirectory.appending(path: "\(id).yaml")
     }
 
-    private func ruleOverrideURL(for id: String) -> URL {
-        mihomoConfigsDirectory.appending(path: "\(id).rules.yaml")
-    }
-
     private func loadRuleOverrides(for id: String) throws -> RuleOverrideSet {
-        let url = ruleOverrideURL(for: id)
-        guard FileManager.default.fileExists(atPath: url.path) else { return RuleOverrideSet() }
-        return try RuleOverrideSet(yaml: String(contentsOf: url, encoding: .utf8))
+        try loadMetadata()[id]?.ruleOverrides ?? RuleOverrideSet()
     }
 
     private func currentProfileID() throws -> String {
-        guard FileManager.default.fileExists(atPath: currentProfileFile.path) else {
+        guard let value = AppPreferenceStore.readMihomoSettings().selectedProfileID?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !value.isEmpty else {
             return "default"
         }
-        let value = try String(contentsOf: currentProfileFile, encoding: .utf8)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? "default" : value
+        return value
     }
 
     private func loadMetadata() throws -> [String: ProfileMetadata] {
-        guard FileManager.default.fileExists(atPath: metadataFile.path) else {
-            return [:]
+        AppPreferenceStore.readMihomoSettings().profiles.reduce(into: [:]) { result, item in
+            result[item.id] = item
         }
-        let data = try Data(contentsOf: metadataFile)
-        return try JSONDecoder().decode([String: ProfileMetadata].self, from: data)
     }
 
     private func saveMetadata(_ metadata: [String: ProfileMetadata]) throws {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(metadata)
-        try data.write(to: metadataFile, options: .atomic)
+        try AppPreferenceStore.updateMihomoSettings { settings in
+            settings.profiles = metadata.values.sorted { $0.id < $1.id }
+        }
+    }
+
+    private func inferredMetadata(id: String, url: URL) -> ProfileMetadata {
+        ProfileMetadata(
+            id: id,
+            name: id == "default" ? "Default" : displayName(for: url),
+            kind: .local,
+            remoteURLString: nil,
+            updatedAt: modificationDate(for: url),
+            useProxy: false,
+            subscriptionUserInfo: nil
+        )
     }
 
     private func summary(

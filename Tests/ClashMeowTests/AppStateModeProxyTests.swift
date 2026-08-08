@@ -134,18 +134,16 @@ struct AppStateModeProxyTests {
         )
 
         await state.setRule(rule, isEnabled: false)
-        let disabledOverrideYAML = try String(
-            contentsOf: mihomoConfigsDirectory.appending(path: "\(profileID).rules.yaml"),
-            encoding: .utf8
-        )
+        let disabledMetadata = AppPreferenceStore.readMihomoSettings().profiles.first { $0.id == profileID }
         let disabledRuntimeYAML = try String(contentsOf: Self.runtimeConfigURL(in: directory), encoding: .utf8)
-        #expect(disabledOverrideYAML.contains("delete:"))
-        #expect(disabledOverrideYAML.contains("DOMAIN-SUFFIX,example.com,Proxy"))
+        #expect(disabledMetadata?.ruleOverrides.delete == ["DOMAIN-SUFFIX,example.com,Proxy"])
         #expect(!disabledRuntimeYAML.contains("DOMAIN-SUFFIX,example.com,Proxy"))
         #expect(MockMihomoURLProtocolSupport.handledRequests.contains { $0.method == "PATCH" && $0.path == "/rules/disable" })
 
         await state.setRule(rule, isEnabled: true)
         let enabledRuntimeYAML = try String(contentsOf: Self.runtimeConfigURL(in: directory), encoding: .utf8)
+        let enabledMetadata = AppPreferenceStore.readMihomoSettings().profiles.first { $0.id == profileID }
+        #expect(enabledMetadata?.ruleOverrides.isEmpty == true)
         #expect(!FileManager.default.fileExists(atPath: mihomoConfigsDirectory.appending(path: "\(profileID).rules.yaml").path))
         #expect(enabledRuntimeYAML.contains("DOMAIN-SUFFIX,example.com,Proxy"))
         #expect(MockMihomoURLProtocolSupport.handledRequests.filter { $0.method == "PATCH" && $0.path == "/rules/disable" }.count == 2)

@@ -35,6 +35,26 @@ enum AppPersistencePaths {
 }
 
 enum AppPreferenceStore {
+    struct MihomoSettings: Codable, Equatable {
+        var selectedProfileID: String?
+        var profiles: [MihomoProfileMetadata] = []
+    }
+
+    struct MihomoProfileMetadata: Codable, Equatable {
+        var id: String
+        var name: String
+        var kind: ClashMeowProfileKind
+        var remoteURLString: String?
+        var updatedAt: Date?
+        var useProxy: Bool
+        var subscriptionUserInfo: SubscriptionUserInfo?
+        var ruleOverrides: RuleOverrideSet = RuleOverrideSet()
+
+        var remoteURL: URL? {
+            remoteURLString.flatMap(URL.init(string:))
+        }
+    }
+
     struct Preferences: Codable, Equatable {
         var launchAtLogin: Bool?
         var coreEnabled: Bool?
@@ -42,7 +62,7 @@ enum AppPreferenceStore {
         var systemProxyUserEnabled: Bool?
         var tunEnabled: Bool?
         var tunUserEnabled: Bool?
-        var selectedProfileID: String?
+        var mihomoSettings: MihomoSettings?
         var forwardingMode: String?
         var allowLan: Bool?
         var systemProxyNetworkService: String?
@@ -118,6 +138,18 @@ enum AppPreferenceStore {
         return (try? JSONDecoder().decode(Preferences.self, from: data)) ?? Preferences()
     }
 
+    static func readMihomoSettings() -> MihomoSettings {
+        read().mihomoSettings ?? MihomoSettings()
+    }
+
+    static func updateMihomoSettings(_ mutate: (inout MihomoSettings) -> Void) throws {
+        var preferences = read()
+        var settings = preferences.mihomoSettings ?? MihomoSettings()
+        mutate(&settings)
+        preferences.mihomoSettings = settings
+        try writeOrThrow(preferences)
+    }
+
     private static func update(_ mutate: (inout Preferences) -> Void) {
         var preferences = read()
         mutate(&preferences)
@@ -126,15 +158,19 @@ enum AppPreferenceStore {
 
     private static func write(_ preferences: Preferences) {
         do {
-            let directory = configDirectory
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(preferences)
-            try data.write(to: preferencesFile, options: .atomic)
+            try writeOrThrow(preferences)
         } catch {
             assertionFailure("Failed to write app preferences: \(error.localizedDescription)")
         }
+    }
+
+    private static func writeOrThrow(_ preferences: Preferences) throws {
+        let directory = configDirectory
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(preferences)
+        try data.write(to: preferencesFile, options: .atomic)
     }
 }
 
@@ -168,23 +204,6 @@ enum CoreAutoStartManager {
 
     static func setEnabled(_ enabled: Bool) {
         AppPreferenceStore.setBool(enabled, \.coreEnabled)
-    }
-}
-
-enum ProfileSelectionPreference {
-    static var selectedProfileID: String? {
-        AppPreferenceStore.string(\.selectedProfileID)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    static func setSelectedProfileID(_ id: String?) {
-        let value = id?.trimmingCharacters(in: .whitespacesAndNewlines)
-        AppPreferenceStore.setString(value?.isEmpty == false ? value : nil, \.selectedProfileID)
-    }
-
-    static func clearIfSelected(_ id: String) {
-        guard selectedProfileID == id else { return }
-        setSelectedProfileID(nil)
     }
 }
 
