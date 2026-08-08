@@ -15,7 +15,7 @@ enum AppPersistencePaths {
 }
 
 enum AppPreferenceStore {
-    struct Settings: Codable, Equatable {
+    struct Preferences: Codable, Equatable {
         var launchAtLogin: Bool?
         var coreEnabled: Bool?
         var systemProxyEnabled: Bool?
@@ -38,7 +38,7 @@ enum AppPreferenceStore {
         var internetLatencyTimeoutSeconds: Int?
     }
 
-    private static let settingsFileName = "settings.json"
+    private static let preferencesFileName = "preferences.json"
     nonisolated(unsafe) static var configDirectoryOverrideForTesting: URL?
 
     static var configDirectory: URL {
@@ -48,73 +48,72 @@ enum AppPreferenceStore {
         return AppPersistencePaths.configDirectory
     }
 
-    static var settingsFile: URL {
-        configDirectory.appending(path: settingsFileName)
+    static var preferencesFile: URL {
+        configDirectory.appending(path: preferencesFileName)
     }
 
     static func bool(
-        _ keyPath: WritableKeyPath<Settings, Bool?>,
+        _ keyPath: WritableKeyPath<Preferences, Bool?>,
         default defaultValue: Bool
     ) -> Bool {
-        let settings = read()
-        return settings[keyPath: keyPath] ?? defaultValue
+        let preferences = read()
+        return preferences[keyPath: keyPath] ?? defaultValue
     }
 
-    static func setBool(_ value: Bool, _ keyPath: WritableKeyPath<Settings, Bool?>) {
-        update { settings in
-            settings[keyPath: keyPath] = value
+    static func setBool(_ value: Bool, _ keyPath: WritableKeyPath<Preferences, Bool?>) {
+        update { preferences in
+            preferences[keyPath: keyPath] = value
         }
     }
 
     static func int(
-        _ keyPath: WritableKeyPath<Settings, Int?>,
+        _ keyPath: WritableKeyPath<Preferences, Int?>,
         default defaultValue: Int
     ) -> Int {
-        let settings = read()
-        return settings[keyPath: keyPath] ?? defaultValue
+        let preferences = read()
+        return preferences[keyPath: keyPath] ?? defaultValue
     }
 
-    static func setInt(_ value: Int, _ keyPath: WritableKeyPath<Settings, Int?>) {
-        update { settings in
-            settings[keyPath: keyPath] = value
+    static func setInt(_ value: Int, _ keyPath: WritableKeyPath<Preferences, Int?>) {
+        update { preferences in
+            preferences[keyPath: keyPath] = value
         }
     }
 
-    static func string(_ keyPath: WritableKeyPath<Settings, String?>) -> String? {
-        let settings = read()
-        return settings[keyPath: keyPath]
+    static func string(_ keyPath: WritableKeyPath<Preferences, String?>) -> String? {
+        let preferences = read()
+        return preferences[keyPath: keyPath]
     }
 
-    static func setString(_ value: String?, _ keyPath: WritableKeyPath<Settings, String?>) {
-        update { settings in
-            settings[keyPath: keyPath] = value
+    static func setString(_ value: String?, _ keyPath: WritableKeyPath<Preferences, String?>) {
+        update { preferences in
+            preferences[keyPath: keyPath] = value
         }
     }
 
-    static func read() -> Settings {
-        guard let data = try? Data(contentsOf: settingsFile) else {
-            return Settings()
+    static func read() -> Preferences {
+        guard let data = try? Data(contentsOf: preferencesFile) else {
+            return Preferences()
         }
-        return (try? JSONDecoder().decode(Settings.self, from: data)) ?? Settings()
+        return (try? JSONDecoder().decode(Preferences.self, from: data)) ?? Preferences()
     }
 
-    private static func update(_ mutate: (inout Settings) -> Void) {
-        var settings = read()
-        mutate(&settings)
-        write(settings)
+    private static func update(_ mutate: (inout Preferences) -> Void) {
+        var preferences = read()
+        mutate(&preferences)
+        write(preferences)
     }
 
-    private static func write(_ settings: Settings) {
+    private static func write(_ preferences: Preferences) {
         do {
             let directory = configDirectory
-            let file = directory.appending(path: settingsFileName)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(settings)
-            try data.write(to: file, options: .atomic)
+            let data = try encoder.encode(preferences)
+            try data.write(to: preferencesFile, options: .atomic)
         } catch {
-            assertionFailure("Failed to write app settings: \(error.localizedDescription)")
+            assertionFailure("Failed to write app preferences: \(error.localizedDescription)")
         }
     }
 }
@@ -181,8 +180,8 @@ enum SystemProxyPreference {
 
 enum SystemProxyUserPreference {
     static var isEnabled: Bool {
-        let settings = AppPreferenceStore.read()
-        return settings.systemProxyUserEnabled ?? false
+        let preferences = AppPreferenceStore.read()
+        return preferences.systemProxyUserEnabled ?? false
     }
 
     static func setEnabled(_ enabled: Bool) {
@@ -202,8 +201,8 @@ enum TunPreference {
 
 enum TunUserPreference {
     static var isEnabled: Bool {
-        let settings = AppPreferenceStore.read()
-        return settings.tunUserEnabled ?? false
+        let preferences = AppPreferenceStore.read()
+        return preferences.tunUserEnabled ?? false
     }
 
     static func setEnabled(_ enabled: Bool) {

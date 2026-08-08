@@ -34,7 +34,7 @@ struct SettingsView: View {
             } header: {
                 Text("网络")
             } footer: {
-                Text("偏好保存到 ~/.config/clash-meow/settings.json。系统代理和 TUN 需要内核已启动；TUN 修改配置后会优先热重载，失败时重启内核。")
+                Text("偏好保存到 ~/.config/clash-meow/preferences.json。系统代理和 TUN 需要内核已启动；TUN 修改配置后会优先热重载，失败时重启内核。")
             }
 
             Section {

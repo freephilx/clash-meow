@@ -25,8 +25,8 @@ enum AppPreferenceStoreTestIsolation {
 
 @Suite(.serialized)
 struct AppPreferenceStoreTests {
-    @Test func preferencesPersistToConfigDirectorySettingsFile() throws {
-        try AppPreferenceStoreTestIsolation.withTemporaryDirectory(prefix: "clash-meow-settings") { directory in
+    @Test func preferencesPersistToConfigDirectoryPreferencesFile() throws {
+        try AppPreferenceStoreTestIsolation.withTemporaryDirectory(prefix: "clash-meow-preferences") { directory in
             SystemProxyPreference.setEnabled(true)
             SystemProxyUserPreference.setEnabled(true)
             TunPreference.setEnabled(true)
@@ -39,25 +39,35 @@ struct AppPreferenceStoreTests {
             InternetLatencyPreference.dnsDomain = "example.com"
             InternetLatencyPreference.timeoutSeconds = 8
 
-            let data = try Data(contentsOf: directory.appending(path: "settings.json"))
-            let settings = try JSONDecoder().decode(AppPreferenceStore.Settings.self, from: data)
+            let data = try Data(contentsOf: directory.appending(path: "preferences.json"))
+            let preferences = try JSONDecoder().decode(AppPreferenceStore.Preferences.self, from: data)
 
-            #expect(settings.systemProxyEnabled == true)
-            #expect(settings.systemProxyUserEnabled == true)
-            #expect(settings.tunEnabled == true)
-            #expect(settings.tunUserEnabled == true)
-            #expect(settings.selectedProfileID == "remote-profile")
-            #expect(settings.coreEnabled == false)
-            #expect(settings.logRetentionDays == 12)
-            #expect(settings.logDefaultLevel == LogLevelFilter.warning.rawValue)
-            #expect(settings.internetLatencyTestURLs == "https://example.com/generate_204")
-            #expect(settings.internetLatencyDNSDomain == "example.com")
-            #expect(settings.internetLatencyTimeoutSeconds == 8)
+            #expect(preferences.systemProxyEnabled == true)
+            #expect(preferences.systemProxyUserEnabled == true)
+            #expect(preferences.tunEnabled == true)
+            #expect(preferences.tunUserEnabled == true)
+            #expect(preferences.selectedProfileID == "remote-profile")
+            #expect(preferences.coreEnabled == false)
+            #expect(preferences.logRetentionDays == 12)
+            #expect(preferences.logDefaultLevel == LogLevelFilter.warning.rawValue)
+            #expect(preferences.internetLatencyTestURLs == "https://example.com/generate_204")
+            #expect(preferences.internetLatencyDNSDomain == "example.com")
+            #expect(preferences.internetLatencyTimeoutSeconds == 8)
+        }
+    }
+
+    @Test func corruptPreferencesFileUsesDefaults() throws {
+        try AppPreferenceStoreTestIsolation.withTemporaryDirectory(prefix: "clash-meow-preferences") { directory in
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try Data("not-json".utf8)
+                .write(to: directory.appending(path: "preferences.json"), options: .atomic)
+
+            #expect(AppPreferenceStore.read().coreEnabled == nil)
         }
     }
 
     @Test func internetLatencyPreferencesSanitizeValues() {
-        AppPreferenceStoreTestIsolation.withTemporaryDirectory(prefix: "clash-meow-settings") { _ in
+        AppPreferenceStoreTestIsolation.withTemporaryDirectory(prefix: "clash-meow-preferences") { _ in
             InternetLatencyPreference.testURLsText = "not-a-url, https://one.example.com\nhttp://two.example.com"
             InternetLatencyPreference.dnsDomain = "  example.org  "
             InternetLatencyPreference.timeoutSeconds = 20
@@ -71,17 +81,17 @@ struct AppPreferenceStoreTests {
     }
 
     @Test func actualNetworkStateCanChangeWithoutOverwritingUserState() {
-        AppPreferenceStoreTestIsolation.withTemporaryDirectory(prefix: "clash-meow-settings") { _ in
+        AppPreferenceStoreTestIsolation.withTemporaryDirectory(prefix: "clash-meow-preferences") { _ in
             SystemProxyUserPreference.setEnabled(true)
             SystemProxyPreference.setEnabled(false)
             TunUserPreference.setEnabled(true)
             TunPreference.setEnabled(false)
 
-            let settings = AppPreferenceStore.read()
-            #expect(settings.systemProxyUserEnabled == true)
-            #expect(settings.systemProxyEnabled == false)
-            #expect(settings.tunUserEnabled == true)
-            #expect(settings.tunEnabled == false)
+            let preferences = AppPreferenceStore.read()
+            #expect(preferences.systemProxyUserEnabled == true)
+            #expect(preferences.systemProxyEnabled == false)
+            #expect(preferences.tunUserEnabled == true)
+            #expect(preferences.tunEnabled == false)
         }
     }
 
