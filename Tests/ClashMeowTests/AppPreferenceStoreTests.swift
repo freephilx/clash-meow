@@ -97,7 +97,7 @@ struct AppPreferenceStoreTests {
 
     @Test func profileRepositoryRestoresLastUserSelectedProfileOnStartup() throws {
         try AppPreferenceStoreTestIsolation.withTemporaryDirectory(prefix: "clash-meow-profiles") { directory in
-            let activeConfig = directory.appending(path: "config.yaml")
+            let activeConfig = Self.runtimeConfigURL(in: directory)
             let repository = ProfileRepository(configDirectory: directory, activeConfigFile: activeConfig)
             _ = try repository.listProfiles()
 
@@ -128,7 +128,7 @@ struct AppPreferenceStoreTests {
 
     @Test func profileRepositoryRefreshesStaleActiveConfigOnStartup() throws {
         try AppPreferenceStoreTestIsolation.withTemporaryDirectory(prefix: "clash-meow-profiles") { directory in
-            let activeConfig = directory.appending(path: "config.yaml")
+            let activeConfig = Self.runtimeConfigURL(in: directory)
             let repository = ProfileRepository(configDirectory: directory, activeConfigFile: activeConfig)
             _ = try repository.listProfiles()
 
@@ -140,6 +140,10 @@ struct AppPreferenceStoreTests {
                 encoding: .utf8
             )
             try selectedID.write(to: profilesDirectory.appending(path: "current.txt"), atomically: true, encoding: .utf8)
+            try FileManager.default.createDirectory(
+                at: activeConfig.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
             try Self.profileYAML(groupName: "Selected", mixedPort: 7890).write(
                 to: activeConfig,
                 atomically: true,
@@ -150,7 +154,7 @@ struct AppPreferenceStoreTests {
             try repository.restoreSelectedProfileIfNeeded()
 
             let activeYAML = try String(contentsOf: activeConfig, encoding: .utf8)
-            let appLog = try String(contentsOf: directory.appending(path: "logs/app.log"), encoding: .utf8)
+            let appLog = try String(contentsOf: Self.appLogURL(in: directory), encoding: .utf8)
             #expect(activeYAML.contains("mixed-port: 7891"))
             #expect(!activeYAML.contains("mixed-port: 7890"))
             #expect(appLog.contains("[RuntimeConfig]"))
@@ -161,7 +165,7 @@ struct AppPreferenceStoreTests {
 
     @Test func profileRepositoryRuleOverrideUpdatesRuntimeConfig() throws {
         try AppPreferenceStoreTestIsolation.withTemporaryDirectory(prefix: "clash-meow-profiles") { directory in
-            let activeConfig = directory.appending(path: "config.yaml")
+            let activeConfig = Self.runtimeConfigURL(in: directory)
             let repository = ProfileRepository(configDirectory: directory, activeConfigFile: activeConfig)
             _ = try repository.listProfiles()
 
@@ -193,7 +197,7 @@ struct AppPreferenceStoreTests {
 
     @Test func profileRepositoryRuleDeleteOverrideUpdatesRuntimeConfig() throws {
         try AppPreferenceStoreTestIsolation.withTemporaryDirectory(prefix: "clash-meow-profiles") { directory in
-            let activeConfig = directory.appending(path: "config.yaml")
+            let activeConfig = Self.runtimeConfigURL(in: directory)
             let repository = ProfileRepository(configDirectory: directory, activeConfigFile: activeConfig)
             _ = try repository.listProfiles()
 
@@ -237,7 +241,7 @@ struct AppPreferenceStoreTests {
         try AppPreferenceStoreTestIsolation.withTemporaryDirectory(prefix: "clash-meow-profiles") { directory in
             let repository = ProfileRepository(
                 configDirectory: directory,
-                activeConfigFile: directory.appending(path: "config.yaml")
+                activeConfigFile: Self.runtimeConfigURL(in: directory)
             )
             _ = try repository.listProfiles()
             ProfileSelectionPreference.setSelectedProfileID("missing-profile")
@@ -248,17 +252,57 @@ struct AppPreferenceStoreTests {
         }
     }
 
-    @Test func profileRepositoryMigratesCurrentProfileToSelectedProfileWhenMissing() throws {
+    @Test func profileRepositoryInitializesDefaultSelectionWhenMissing() throws {
         try AppPreferenceStoreTestIsolation.withTemporaryDirectory(prefix: "clash-meow-profiles") { directory in
             let repository = ProfileRepository(
                 configDirectory: directory,
-                activeConfigFile: directory.appending(path: "config.yaml")
+                activeConfigFile: Self.runtimeConfigURL(in: directory)
             )
             _ = try repository.listProfiles()
+            let profilesDirectory = directory.appending(path: "profiles", directoryHint: .isDirectory)
+            try Self.profileYAML(groupName: "IgnoredCurrent").write(
+                to: profilesDirectory.appending(path: "ignored-current.yaml"),
+                atomically: true,
+                encoding: .utf8
+            )
+            try "ignored-current".write(
+                to: profilesDirectory.appending(path: "current.txt"),
+                atomically: true,
+                encoding: .utf8
+            )
 
             try repository.restoreSelectedProfileIfNeeded()
 
             #expect(ProfileSelectionPreference.selectedProfileID == "default")
+            let currentID = try String(
+                contentsOf: profilesDirectory.appending(path: "current.txt"),
+                encoding: .utf8
+            ).trimmingCharacters(in: .whitespacesAndNewlines)
+            #expect(currentID == "default")
+        }
+    }
+
+    @Test func runtimeConfigIsNotUsedAsDefaultProfileSource() throws {
+        try AppPreferenceStoreTestIsolation.withTemporaryDirectory(prefix: "clash-meow-profiles") { directory in
+            let activeConfig = Self.runtimeConfigURL(in: directory)
+            try FileManager.default.createDirectory(
+                at: activeConfig.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try Self.profileYAML(groupName: "RuntimeOnly").write(
+                to: activeConfig,
+                atomically: true,
+                encoding: .utf8
+            )
+            let repository = ProfileRepository(configDirectory: directory, activeConfigFile: activeConfig)
+
+            _ = try repository.listProfiles()
+
+            let defaultProfile = try String(
+                contentsOf: directory.appending(path: "profiles/default.yaml"),
+                encoding: .utf8
+            )
+            #expect(!defaultProfile.contains("RuntimeOnly"))
         }
     }
 
@@ -277,5 +321,19 @@ struct AppPreferenceStoreTests {
         rules:
         \(rules)
         """
+    }
+
+    private static func runtimeConfigURL(in rootDirectory: URL) -> URL {
+        rootDirectory
+            .appending(path: "runtime", directoryHint: .isDirectory)
+            .appending(path: "mihomo", directoryHint: .isDirectory)
+            .appending(path: "config.yaml")
+    }
+
+    private static func appLogURL(in rootDirectory: URL) -> URL {
+        rootDirectory
+            .appending(path: "runtime", directoryHint: .isDirectory)
+            .appending(path: "logs", directoryHint: .isDirectory)
+            .appending(path: "app.log")
     }
 }

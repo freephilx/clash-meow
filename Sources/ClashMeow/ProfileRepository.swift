@@ -68,12 +68,15 @@ struct ProfileRepository {
     private let metadataFile: URL
     private let logsDirectory: URL
 
-    init(configDirectory: URL, activeConfigFile: URL) {
+    init(configDirectory: URL, activeConfigFile: URL, logsDirectory: URL? = nil) {
         self.profilesDirectory = configDirectory.appending(path: "profiles", directoryHint: .isDirectory)
         self.activeConfigFile = activeConfigFile
         self.currentProfileFile = profilesDirectory.appending(path: "current.txt")
         self.metadataFile = profilesDirectory.appending(path: "profiles-metadata.json")
-        self.logsDirectory = configDirectory.appending(path: "logs", directoryHint: .isDirectory)
+        self.logsDirectory = logsDirectory
+            ?? configDirectory
+                .appending(path: "runtime", directoryHint: .isDirectory)
+                .appending(path: "logs", directoryHint: .isDirectory)
     }
 
     func listProfiles() throws -> [ClashMeowProfileSummary] {
@@ -207,18 +210,13 @@ struct ProfileRepository {
 
     func restoreSelectedProfileIfNeeded() throws {
         try prepareStorage()
-        guard let selectedID = ProfileSelectionPreference.selectedProfileID,
-              !selectedID.isEmpty else {
-            let currentID = try currentProfileID()
-            ProfileSelectionPreference.setSelectedProfileID(currentID)
-            let runtimeYAML = try runtimeYAML(for: currentID)
-            if try activeConfigNeedsRefresh(expectedYAML: runtimeYAML) {
-                logRuntimeConfig("冷启动检测到 runtime config 过期，准备重写 profile=\(currentID)")
-                try writeRuntimeConfig(runtimeYAML, profileID: currentID, reason: "startupRefresh")
-            } else {
-                logRuntimeConfig("冷启动 runtime config 已是最新 profile=\(currentID) path=\(activeConfigFile.path)")
-            }
-            return
+        let selectedID: String
+        if let storedSelectedID = ProfileSelectionPreference.selectedProfileID,
+           !storedSelectedID.isEmpty {
+            selectedID = storedSelectedID
+        } else {
+            selectedID = "default"
+            ProfileSelectionPreference.setSelectedProfileID(selectedID)
         }
         guard FileManager.default.fileExists(atPath: profileURL(for: selectedID).path) else {
             ProfileSelectionPreference.setSelectedProfileID(nil)
@@ -282,6 +280,10 @@ struct ProfileRepository {
     }
 
     private func writeRuntimeConfig(_ yaml: String, profileID: String, reason: String) throws {
+        try FileManager.default.createDirectory(
+            at: activeConfigFile.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
         try yaml.write(to: activeConfigFile, atomically: true, encoding: .utf8)
         let config = MihomoConfig.parsed(from: yaml)
         let mixedPort = config.mixedPort.map(String.init) ?? "-"
@@ -330,13 +332,7 @@ struct ProfileRepository {
         try FileManager.default.createDirectory(at: profilesDirectory, withIntermediateDirectories: true)
         let defaultURL = profileURL(for: "default")
         if !FileManager.default.fileExists(atPath: defaultURL.path) {
-            if FileManager.default.fileExists(atPath: activeConfigFile.path),
-               let activeConfig = try? String(contentsOf: activeConfigFile, encoding: .utf8),
-               Self.isLikelyMihomoYAML(activeConfig) {
-                try FileManager.default.copyItem(at: activeConfigFile, to: defaultURL)
-            } else {
-                try defaultProfileContent().write(to: defaultURL, atomically: true, encoding: .utf8)
-            }
+            try defaultProfileContent().write(to: defaultURL, atomically: true, encoding: .utf8)
         } else if let defaultContent = try? String(contentsOf: defaultURL, encoding: .utf8),
                   !Self.isLikelyMihomoYAML(defaultContent) {
             try defaultProfileContent().write(to: defaultURL, atomically: true, encoding: .utf8)

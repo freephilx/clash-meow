@@ -23,8 +23,8 @@ ClashMeow 以 Xcode 工程作为主要开发入口，Swift Package Manager 作�
 - Xcode 构建阶段不联网，仅从校验后的用户缓存按 `ARCHS` 注入内核。
 - App 只使用包内 `Contents/Resources/Mihomo/<arch>/bin/mihomo`，不回退到
   Homebrew 或系统目录。
-- 使用 `~/.config/clash-meow` 作为工作目录。
-- 使用 `~/.config/clash-meow/config.yaml` 作为默认配置文件。
+- 使用 `~/.config/clash-meow/runtime/mihomo` 作为工作目录。
+- 使用 `~/.config/clash-meow/runtime/mihomo/config.yaml` 作为默认配置文件。
 - 每次启动内核前执行 `mihomo -t -d <工作目录> -f <运行配置>`。
 - App bundle 运行时通过 `com.clash.meow.helper` 以 root 启动 mihomo；SwiftPM 或非 app bundle 调试环境保留普通子进程启动路径。
 - 通过 `127.0.0.1:9090` 的 `external-controller` 读取和修改运行状态。

@@ -86,7 +86,7 @@ struct SettingsView: View {
             } header: {
                 Text("日志")
             } footer: {
-                Text("日志保存在 ~/.config/clash-meow/logs。重启后仍保留；超过保留天数或文件大小上限的旧内容会被清理。")
+                Text("日志保存在 ~/.config/clash-meow/runtime。重启后仍保留；超过保留天数或文件大小上限的旧内容会被清理。")
             }
         }
         .formStyle(.grouped)

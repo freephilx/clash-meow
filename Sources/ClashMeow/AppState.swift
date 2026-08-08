@@ -93,7 +93,11 @@ final class AppState: ObservableObject {
     }
 
     private var profileRepository: ProfileRepository {
-        ProfileRepository(configDirectory: core.configDirectory, activeConfigFile: core.configFile)
+        ProfileRepository(
+            configDirectory: core.rootDirectory,
+            activeConfigFile: core.configFile,
+            logsDirectory: core.logsDirectory
+        )
     }
 
     private enum ObservedConfigFile {
@@ -1704,7 +1708,7 @@ final class AppState: ObservableObject {
         case .app:
             return core.appLogFile
         case .all:
-            return core.logsDirectory
+            return core.runtimeDirectory
         }
     }
 

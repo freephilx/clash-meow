@@ -182,7 +182,7 @@ final class HelperService: NSObject, HelperXPCProtocol, NSXPCListenerDelegate {
             throw HelperServiceError.invalidCoreExecutable(executable)
         }
 
-        guard configDirectory.hasSuffix("/.config/clash-meow") else {
+        guard configDirectory.hasSuffix("/.config/clash-meow/runtime/mihomo") else {
             throw HelperServiceError.invalidConfigDirectory(configDirectory)
         }
 
@@ -195,7 +195,6 @@ final class HelperService: NSObject, HelperXPCProtocol, NSXPCListenerDelegate {
 
         let expectedLogFile = normalizedPath(
             URL(fileURLWithPath: configDirectory)
-                .appendingPathComponent("logs", isDirectory: true)
                 .appendingPathComponent("core.log")
                 .path
         )

@@ -13,6 +13,8 @@ final class MihomoCoreManager: ObservableObject {
     private var pendingRestartWorkItem: DispatchWorkItem?
     private var logFileHandle: FileHandle?
 
+    let rootDirectory: URL
+    let runtimeDirectory: URL
     let configDirectory: URL
     let configFile: URL
     let logsDirectory: URL
@@ -20,10 +22,12 @@ final class MihomoCoreManager: ObservableObject {
     let appLogFile: URL
 
     init() {
-        self.configDirectory = AppPersistencePaths.configDirectory
+        self.rootDirectory = AppPersistencePaths.configDirectory
+        self.runtimeDirectory = AppPersistencePaths.runtimeDirectory
+        self.configDirectory = AppPersistencePaths.mihomoRuntimeDirectory
         self.configFile = configDirectory.appending(path: "config.yaml")
-        self.logsDirectory = configDirectory.appending(path: "logs", directoryHint: .isDirectory)
-        self.coreLogFile = logsDirectory.appending(path: "core.log")
+        self.logsDirectory = AppPersistencePaths.logsDirectory
+        self.coreLogFile = configDirectory.appending(path: "core.log")
         self.appLogFile = logsDirectory.appending(path: "app.log")
     }
 
@@ -33,6 +37,7 @@ final class MihomoCoreManager: ObservableObject {
             try FileManager.default.createDirectory(at: logsDirectory, withIntermediateDirectories: true)
             try copyBundledGeoDataIfNeeded()
             CoreLogSupport.cleanupOldLogs(in: logsDirectory)
+            CoreLogSupport.cleanupOldLogs(in: configDirectory)
             if !FileManager.default.fileExists(atPath: configFile.path) {
                 let sample = AppResources.url(forResource: "sampleConfig", withExtension: "yaml")
                 if let sample {

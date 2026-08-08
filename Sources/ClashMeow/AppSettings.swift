@@ -12,6 +12,18 @@ enum AppPersistencePaths {
         return FileManager.default.homeDirectoryForCurrentUser
             .appending(path: configDirectoryName, directoryHint: .isDirectory)
     }
+
+    static var runtimeDirectory: URL {
+        configDirectory.appending(path: "runtime", directoryHint: .isDirectory)
+    }
+
+    static var mihomoRuntimeDirectory: URL {
+        runtimeDirectory.appending(path: "mihomo", directoryHint: .isDirectory)
+    }
+
+    static var logsDirectory: URL {
+        runtimeDirectory.appending(path: "logs", directoryHint: .isDirectory)
+    }
 }
 
 enum AppPreferenceStore {

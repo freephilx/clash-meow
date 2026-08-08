@@ -39,6 +39,27 @@ struct AppStateModeProxyTests {
         return state
     }
 
+    @Test func coreUsesRuntimeDirectoryLayout() {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "clash-meow-runtime-layout-\(UUID().uuidString)", directoryHint: .isDirectory)
+        AppPersistencePaths.configDirectoryOverrideForTesting = directory
+        defer { AppPersistencePaths.configDirectoryOverrideForTesting = nil }
+
+        let core = MihomoCoreManager()
+
+        #expect(core.rootDirectory == directory)
+        #expect(core.runtimeDirectory == directory.appending(path: "runtime", directoryHint: .isDirectory))
+        #expect(core.configDirectory == directory
+            .appending(path: "runtime", directoryHint: .isDirectory)
+            .appending(path: "mihomo", directoryHint: .isDirectory))
+        #expect(core.configFile == Self.runtimeConfigURL(in: directory))
+        #expect(core.logsDirectory == directory
+            .appending(path: "runtime", directoryHint: .isDirectory)
+            .appending(path: "logs", directoryHint: .isDirectory))
+        #expect(core.coreLogFile == core.configDirectory.appending(path: "core.log"))
+        #expect(core.appLogFile == core.logsDirectory.appending(path: "app.log"))
+    }
+
     @Test func mockControllerHandlesModeAndProxyUpdates() async throws {
         MockMihomoURLProtocolSupport.reset()
         let session = MihomoAPI.makeMockSession(protocolClass: MockMihomoURLProtocol.self)
@@ -89,7 +110,7 @@ struct AppStateModeProxyTests {
 
         let repository = ProfileRepository(
             configDirectory: directory,
-            activeConfigFile: directory.appending(path: "config.yaml")
+            activeConfigFile: Self.runtimeConfigURL(in: directory)
         )
         try repository.activateProfile(id: profileID)
         let state = AppState()
@@ -115,14 +136,14 @@ struct AppStateModeProxyTests {
             contentsOf: profilesDirectory.appending(path: "\(profileID).rules.yaml"),
             encoding: .utf8
         )
-        let disabledRuntimeYAML = try String(contentsOf: directory.appending(path: "config.yaml"), encoding: .utf8)
+        let disabledRuntimeYAML = try String(contentsOf: Self.runtimeConfigURL(in: directory), encoding: .utf8)
         #expect(disabledOverrideYAML.contains("delete:"))
         #expect(disabledOverrideYAML.contains("DOMAIN-SUFFIX,example.com,Proxy"))
         #expect(!disabledRuntimeYAML.contains("DOMAIN-SUFFIX,example.com,Proxy"))
         #expect(MockMihomoURLProtocolSupport.handledRequests.contains { $0.method == "PATCH" && $0.path == "/rules/disable" })
 
         await state.setRule(rule, isEnabled: true)
-        let enabledRuntimeYAML = try String(contentsOf: directory.appending(path: "config.yaml"), encoding: .utf8)
+        let enabledRuntimeYAML = try String(contentsOf: Self.runtimeConfigURL(in: directory), encoding: .utf8)
         #expect(!FileManager.default.fileExists(atPath: profilesDirectory.appending(path: "\(profileID).rules.yaml").path))
         #expect(enabledRuntimeYAML.contains("DOMAIN-SUFFIX,example.com,Proxy"))
         #expect(MockMihomoURLProtocolSupport.handledRequests.filter { $0.method == "PATCH" && $0.path == "/rules/disable" }.count == 2)
@@ -165,7 +186,7 @@ struct AppStateModeProxyTests {
 
         let repository = ProfileRepository(
             configDirectory: directory,
-            activeConfigFile: directory.appending(path: "config.yaml")
+            activeConfigFile: Self.runtimeConfigURL(in: directory)
         )
         try repository.activateProfile(id: profileID)
         let state = AppState()
@@ -530,7 +551,7 @@ struct AppStateModeProxyTests {
         rules:
           - MATCH,DIRECT
         """
-        try originalYAML.write(to: directory.appending(path: "config.yaml"), atomically: true, encoding: .utf8)
+        _ = try Self.writeRuntimeConfig(originalYAML, in: directory)
         CoreAutoStartManager.setEnabled(false)
         TunPreference.setEnabled(true)
         TunUserPreference.setEnabled(true)
@@ -576,7 +597,7 @@ struct AppStateModeProxyTests {
         rules:
           - MATCH,DIRECT
         """
-        try originalYAML.write(to: directory.appending(path: "config.yaml"), atomically: true, encoding: .utf8)
+        let runtimeConfig = try Self.writeRuntimeConfig(originalYAML, in: directory)
         TunPreference.setEnabled(false)
         TunUserPreference.setEnabled(false)
         MockMihomoURLProtocolSupport.reset(tunEnabled: false)
@@ -595,7 +616,7 @@ struct AppStateModeProxyTests {
         state.setTunEnabled(true)
         try await Task.sleep(for: .milliseconds(200))
 
-        let updatedYAML = try String(contentsOf: directory.appending(path: "config.yaml"), encoding: .utf8)
+        let updatedYAML = try String(contentsOf: runtimeConfig, encoding: .utf8)
         #expect(updatedYAML.contains("enable: true"))
         #expect(TunPreference.isEnabled == true)
         #expect(TunUserPreference.isEnabled == true)
@@ -631,7 +652,7 @@ struct AppStateModeProxyTests {
         rules:
           - MATCH,DIRECT
         """
-        try originalYAML.write(to: directory.appending(path: "config.yaml"), atomically: true, encoding: .utf8)
+        _ = try Self.writeRuntimeConfig(originalYAML, in: directory)
         TunPreference.setEnabled(false)
         TunUserPreference.setEnabled(false)
         MockMihomoURLProtocolSupport.reset(tunEnabled: false)
@@ -680,7 +701,7 @@ struct AppStateModeProxyTests {
         rules:
           - MATCH,DIRECT
         """
-        try originalYAML.write(to: directory.appending(path: "config.yaml"), atomically: true, encoding: .utf8)
+        _ = try Self.writeRuntimeConfig(originalYAML, in: directory)
         TunPreference.setEnabled(false)
         TunUserPreference.setEnabled(false)
         MockMihomoURLProtocolSupport.reset(
@@ -738,7 +759,7 @@ struct AppStateModeProxyTests {
         rules:
           - MATCH,DIRECT
         """
-        try originalYAML.write(to: directory.appending(path: "config.yaml"), atomically: true, encoding: .utf8)
+        let runtimeConfig = try Self.writeRuntimeConfig(originalYAML, in: directory)
         TunPreference.setEnabled(false)
         TunUserPreference.setEnabled(false)
         MockMihomoURLProtocolSupport.reset(tunEnabled: false, reloadConfigShouldFail: true)
@@ -756,7 +777,7 @@ struct AppStateModeProxyTests {
         state.setTunEnabled(true)
         try await Task.sleep(for: .milliseconds(100))
 
-        let restoredYAML = try String(contentsOf: directory.appending(path: "config.yaml"), encoding: .utf8)
+        let restoredYAML = try String(contentsOf: runtimeConfig, encoding: .utf8)
         #expect(restoredYAML == originalYAML)
         #expect(TunPreference.isEnabled == false)
         #expect(TunUserPreference.isEnabled == false)
@@ -1032,5 +1053,23 @@ struct AppStateModeProxyTests {
                 testURL: "http://www.gstatic.com/generate_204"
             )
         ]
+    }
+
+    private static func runtimeConfigURL(in rootDirectory: URL) -> URL {
+        rootDirectory
+            .appending(path: "runtime", directoryHint: .isDirectory)
+            .appending(path: "mihomo", directoryHint: .isDirectory)
+            .appending(path: "config.yaml")
+    }
+
+    @discardableResult
+    private static func writeRuntimeConfig(_ yaml: String, in rootDirectory: URL) throws -> URL {
+        let url = runtimeConfigURL(in: rootDirectory)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try yaml.write(to: url, atomically: true, encoding: .utf8)
+        return url
     }
 }

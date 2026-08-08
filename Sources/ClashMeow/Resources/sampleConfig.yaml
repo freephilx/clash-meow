@@ -1,4 +1,4 @@
-# ClashMeow writes this starter config to ~/.config/clash-meow/config.yaml.
+# ClashMeow writes this starter config to ~/.config/clash-meow/runtime/mihomo/config.yaml.
 # Safe defaults aligned with Kumo: direct-only profile, no TUN/DNS until configured.
 # Replace proxies and proxy-groups with your subscription or import a profile.
 
