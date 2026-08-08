@@ -74,3 +74,6 @@ ad-hoc 签名，不执行 Developer ID 签名或 Apple 公证。
 可用 `make release` 串行执行打包和 GitHub Release 上传；tag 不存在时，会在
 打包成功后通过 Git 推送，再创建 Release。可通过 `RELEASE_TARGET` 指定目标
 分支或 commit，通过 `RELEASE_REMOTE` 指定 Git remote。
+
+`release` 分支发生 push 时，GitHub Actions 会自动调用同一套 `make release`
+流程，并以 `v<版本>-build.<run_number>` 创建 prerelease。

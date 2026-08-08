@@ -107,4 +107,14 @@ echo "==> Version: $version"
 echo "==> Target: $release_target"
 "$ROOT/scripts/build-release.sh" "$version"
 ensure_release_tag
-"$ROOT/scripts/upload-github.sh" "$release_tag"
+
+assets=(
+  "$ROOT/dist/release/Clash-Meow-$version-Apple-Silicon.dmg"
+  "$ROOT/dist/release/Clash-Meow-$version-Apple-Silicon.dmg.sha256"
+  "$ROOT/dist/release/Clash-Meow-$version-Intel.dmg"
+  "$ROOT/dist/release/Clash-Meow-$version-Intel.dmg.sha256"
+)
+for asset in "${assets[@]}"; do
+  [[ -f "$asset" ]] || fail "release asset not found: $asset"
+done
+"$ROOT/scripts/upload-github.sh" "$release_tag" "${assets[@]}"

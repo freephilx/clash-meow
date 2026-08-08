@@ -175,6 +175,21 @@ tag 不存在时，会在打包成功后创建并通过 Git 推送，再创建 G
 PACKAGE_VERSION=0.1.0 RELEASE_TAG=v0.1.0 RELEASE_TARGET=main make release
 ```
 
+## GitHub Actions 自动发布
+
+`.github/workflows/release.yml` 监听 `release` 分支的每次 push，使用 GitHub
+托管的 macOS runner 自动执行双架构打包并上传 GitHub Release。
+
+自动发布使用以下版本约定：
+
+- App 版本取 Xcode 的 `MARKETING_VERSION`。
+- App 构建号使用 `github.run_number`。
+- Release tag 为 `v<版本>-build.<run_number>`，并标记为 prerelease。
+- tag 指向触发 workflow 的 commit，每次 push 都会生成独立发布记录。
+
+workflow 只使用仓库内置的 `GITHUB_TOKEN`，仓库需要允许 Actions 具有
+`contents: write` 权限。发布包仍然使用 ad-hoc 签名且不执行 Apple 公证。
+
 ## 生产化说明
 
 TUN 模式、系统代理修改、端口释放等能力在 macOS 上可能需要授权。当前应用已经集成 `com.clash.meow.helper` privileged helper：启动时必须校验并安装 helper；App bundle 下 mihomo 的启动、停止和重启统一由 helper 以 root 托管；普通权限无法释放端口时也由 helper 处理端口释放。
