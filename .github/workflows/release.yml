@@ -1,8 +1,9 @@
-name: Release 分支自动发布
+name: Main / Release 分支自动发布
 
 on:
   push:
     branches:
+      - main
       - release
 
 permissions:

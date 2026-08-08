@@ -184,8 +184,8 @@ PACKAGE_VERSION=0.1.0 RELEASE_TAG=v0.1.0 RELEASE_TARGET=main make release
 
 ## GitHub Actions 自动发布
 
-`.github/workflows/release.yml` 监听 `release` 分支的每次 push，使用 GitHub
-托管 runner 按以下阶段自动发布：
+`.github/workflows/release.yml` 监听 `main` 和 `release` 分支的每次 push，两个分支
+使用同一套 GitHub 托管 runner 流程按以下阶段自动发布：
 
 1. 读取一次应用版本。
 2. Swift 测试与构建阶段并行运行。
@@ -202,7 +202,7 @@ PACKAGE_VERSION=0.1.0 RELEASE_TAG=v0.1.0 RELEASE_TARGET=main make release
 - App 版本取 Xcode 的 `MARKETING_VERSION`。
 - App 构建号使用 `github.run_number`。
 - Release tag 固定为 `Prerelease`，并标记为 prerelease。
-- 每次发布都会强制把 `Prerelease` tag 移到触发 workflow 的 commit，并删除、重建
+- 任一分支触发发布时，都会强制把 `Prerelease` tag 移到触发 workflow 的 commit，并删除、重建
   同名 Release，因此预发布通道只保留最新一组 DMG。
 - workflow 使用并发组串行执行发布，避免多个运行同时移动同一个 tag。
 - 本地正式发布仍使用不可变的 `v<版本>` tag；已存在但指向不同 commit 时会拒绝覆盖。

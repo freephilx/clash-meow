@@ -76,8 +76,8 @@ Apple Silicon 与 Intel 两个 DMG。当前发布流程按项目要求仅使用 
 打包成功后通过 Git 推送，再创建 Release。可通过 `RELEASE_TARGET` 指定目标
 分支或 commit，通过 `RELEASE_REMOTE` 指定 Git remote。
 
-`release` 分支发生 push 时，GitHub Actions 会自动调用同一套 `make release`
-约定，但会把 Swift 测试、arm64 打包和 x86_64 打包拆成并行 Job；全部成功后
+`main` 或 `release` 分支发生 push 时，GitHub Actions 会自动调用同一套
+`make release` 约定，但会把 Swift 测试、arm64 打包和 x86_64 打包拆成并行 Job；全部成功后
 再汇总两个 DMG，以固定的 `Prerelease` tag 创建 prerelease。workflow 会串行执行
 发布阶段；每次发布都把该 tag 强制移动到触发 commit，并删除、重建同名 Release，
 因此自动预发布通道只保留最新产物。本地正式发布仍使用不可变的 `v<版本>` tag。
