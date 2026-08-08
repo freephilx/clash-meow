@@ -53,6 +53,7 @@ private struct SidebarGroup: Identifiable {
 
 struct RootView: View {
     @EnvironmentObject private var state: AppState
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var selection: SidebarDestination? = .overview
 
     private let sidebarGroups = [
@@ -61,50 +62,10 @@ struct RootView: View {
     ]
 
     var body: some View {
-        NavigationSplitView {
-            VStack(alignment: .leading, spacing: 0) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        ForEach(sidebarGroups) { group in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(group.title)
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(ClashMeowPalette.muted)
-                                    .padding(.horizontal, 10)
-                                    .padding(.bottom, 2)
-
-                                ForEach(group.destinations) { destination in
-                                    SidebarDestinationRow(
-                                        destination: destination,
-                                        isSelected: selection == destination
-                                    ) {
-                                        selection = destination
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 14)
-                }
-            }
-            .background(ClashMeowPalette.sidebar)
-            .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 280)
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            sidebar
         } detail: {
-            ZStack(alignment: .top) {
-                detailView
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(ClashMeowPalette.page)
-
-                if let toast = state.toast {
-                    AppToastView(toast: toast)
-                        .padding(.top, 16)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .zIndex(10)
-                }
-            }
-            .animation(.spring(response: 0.28, dampingFraction: 0.86), value: state.toast)
-            .navigationSplitViewColumnWidth(min: 540, ideal: 860)
+            detail
         }
         .navigationSplitViewStyle(.balanced)
         .onChange(of: selection) { _, newValue in
@@ -114,6 +75,54 @@ struct RootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(ClashMeowPalette.page)
+    }
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    ForEach(sidebarGroups) { group in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(group.title)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(ClashMeowPalette.muted)
+                                .padding(.horizontal, 10)
+                                .padding(.bottom, 2)
+
+                            ForEach(group.destinations) { destination in
+                                SidebarDestinationRow(
+                                    destination: destination,
+                                    isSelected: selection == destination
+                                ) {
+                                    selection = destination
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 14)
+            }
+        }
+        .background(ClashMeowPalette.sidebar)
+        .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 280)
+    }
+
+    private var detail: some View {
+        ZStack(alignment: .top) {
+            detailView
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(ClashMeowPalette.page)
+
+            if let toast = state.toast {
+                AppToastView(toast: toast)
+                    .padding(.top, 16)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(10)
+            }
+        }
+        .animation(.spring(response: 0.28, dampingFraction: 0.86), value: state.toast)
+        .navigationSplitViewColumnWidth(min: 540, ideal: 860)
     }
 
     @ViewBuilder
@@ -171,51 +180,23 @@ private struct SidebarDestinationRow: View {
 private struct PageScaffold<Content: View>: View {
     let title: String
     @ViewBuilder let content: Content
-    @State private var titleOffset: CGFloat = 0
-
-    private var headerOpacity: Double {
-        Double(min(max((-titleOffset - 12) / 28, 0), 1))
-    }
-
-    private var coordinateName: String {
-        "page-scroll-\(title)"
-    }
 
     var body: some View {
-        ZStack(alignment: .top) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(title)
-                        .font(.system(size: 24, weight: .bold))
-                        .foregroundStyle(ClashMeowPalette.ink)
-                        .padding(.horizontal, 24)
-                        .padding(.top, 24)
-                        .padding(.bottom, 18)
-                        .background(titleOffsetReader)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                Text(title)
+                    .font(.system(size: 34, weight: .bold))
+                    .foregroundStyle(ClashMeowPalette.ink)
 
-                    content
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 24)
-                }
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+                content
             }
-            .coordinateSpace(name: coordinateName)
-            .onPreferenceChange(PageTitleOffsetKey.self) { titleOffset = $0 }
-
-            FloatingPageHeader(title: title, opacity: headerOpacity)
+            .padding(.horizontal, 30)
+            .padding(.vertical, 28)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .navigationTitle("")
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(ClashMeowPalette.page)
-    }
-
-    private var titleOffsetReader: some View {
-        GeometryReader { proxy in
-            Color.clear.preference(
-                key: PageTitleOffsetKey.self,
-                value: proxy.frame(in: .named(coordinateName)).minY
-            )
-        }
     }
 }
 
@@ -243,44 +224,11 @@ private struct AppToastView: View {
     }
 }
 
-private struct PageTitleOffsetKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
 private struct ViewHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
-    }
-}
-
-private struct FloatingPageHeader: View {
-    let title: String
-    let opacity: Double
-
-    var body: some View {
-        ZStack {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .overlay(alignment: .bottom) {
-                    Rectangle()
-                        .fill(ClashMeowPalette.faintLine.opacity(0.7))
-                        .frame(height: 1)
-                }
-
-            Text(title)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(ClashMeowPalette.ink)
-                .lineLimit(1)
-        }
-        .frame(height: 48)
-        .opacity(opacity)
-        .allowsHitTesting(false)
     }
 }
 
