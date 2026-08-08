@@ -25,6 +25,7 @@ Environment:
   RELEASE_NOTES_FILE Use a Markdown file instead of generated release notes.
   PRERELEASE=1       Create a prerelease.
   DRAFT=1            Create a draft release.
+  MOVING_TAG=1       Force the release tag to RELEASE_TARGET and replace its Release.
   SKIP_BUILD=1       Publish existing DMGs without rebuilding them.
   SKIP_TESTS=1       Skip the Swift test suite during packaging.
 EOF
@@ -57,6 +58,9 @@ command -v git >/dev/null 2>&1 || fail "git is required"
 skip_build="${SKIP_BUILD:-0}"
 [[ "$skip_build" == "0" || "$skip_build" == "1" ]] \
   || fail "SKIP_BUILD must be 0 or 1"
+moving_tag="${MOVING_TAG:-0}"
+[[ "$moving_tag" == "0" || "$moving_tag" == "1" ]] \
+  || fail "MOVING_TAG must be 0 or 1"
 if [[ "$skip_build" == "1" ]]; then
   [[ -n "${PACKAGE_VERSION:-}" ]] \
     || fail "PACKAGE_VERSION is required when SKIP_BUILD=1"
@@ -112,6 +116,16 @@ ensure_release_tag() {
   git push "$release_remote" "refs/tags/$release_tag"
 }
 
+move_release_tag() {
+  local target_commit
+
+  target_commit="$(git rev-parse "${release_target}^{commit}")" \
+    || fail "cannot resolve release target: $release_target"
+  echo "==> Moving tag: $release_tag -> $target_commit"
+  git tag --force "$release_tag" "$target_commit"
+  git push --force "$release_remote" "refs/tags/$release_tag"
+}
+
 echo "==> Release: $release_tag"
 echo "==> Version: $version"
 echo "==> Target: $release_target"
@@ -128,5 +142,10 @@ assets=(
 for asset in "${assets[@]}"; do
   [[ -f "$asset" ]] || fail "release asset not found: $asset"
 done
-ensure_release_tag
-"$ROOT/scripts/upload-github.sh" "$release_tag" "${assets[@]}"
+if [[ "$moving_tag" == "1" ]]; then
+  move_release_tag
+  REPLACE_RELEASE=1 "$ROOT/scripts/upload-github.sh" "$release_tag" "${assets[@]}"
+else
+  ensure_release_tag
+  "$ROOT/scripts/upload-github.sh" "$release_tag" "${assets[@]}"
+fi

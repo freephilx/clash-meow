@@ -20,6 +20,7 @@ Environment:
   RELEASE_NOTES_FILE Use a Markdown file instead of generated release notes.
   PRERELEASE=1       Create a prerelease.
   DRAFT=1            Create a draft release.
+  REPLACE_RELEASE=1  Delete and recreate an existing Release without deleting its tag.
 EOF
 }
 
@@ -37,8 +38,11 @@ command -v gh >/dev/null 2>&1 || fail "gh CLI is required"
 
 tag="$1"
 shift
-[[ "$tag" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] \
+[[ "$tag" == "Prerelease" || "$tag" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] \
   || fail "invalid release tag: $tag"
+replace_release="${REPLACE_RELEASE:-0}"
+[[ "$replace_release" == "0" || "$replace_release" == "1" ]] \
+  || fail "REPLACE_RELEASE must be 0 or 1"
 
 repository="${GITHUB_REPOSITORY:-}"
 if [[ -z "$repository" ]]; then
@@ -65,6 +69,12 @@ else
     (cd "$release_root" && shasum -a 256 -c "$(basename "$checksum")")
     assets+=("$dmg")
   done
+fi
+
+if gh release view "$tag" --repo "$repository" >/dev/null 2>&1 \
+  && [[ "$replace_release" == "1" ]]; then
+  echo "Release $tag exists; deleting it before replacement"
+  gh release delete "$tag" --yes --repo "$repository"
 fi
 
 if gh release view "$tag" --repo "$repository" >/dev/null 2>&1; then

@@ -162,6 +162,7 @@ Release 不存在时，脚本使用 GitHub 自动生成的更新说明创建 Rel
 - `RELEASE_NOTES_FILE=CHANGELOG.md`：使用指定 Markdown 作为发布说明。
 - `PRERELEASE=1`：创建 prerelease。
 - `DRAFT=1`：创建 draft Release。
+- `MOVING_TAG=1`：强制把 tag 移到目标 commit，并删除、重建同名 Release；仅用于滚动预发布通道。
 
 也可以用一个命令依次完成双架构打包与上传：
 
@@ -199,8 +200,11 @@ PACKAGE_VERSION=0.1.0 RELEASE_TAG=v0.1.0 RELEASE_TARGET=main make release
 
 - App 版本取 Xcode 的 `MARKETING_VERSION`。
 - App 构建号使用 `github.run_number`。
-- Release tag 为 `v<版本>-build.<run_number>`，并标记为 prerelease。
-- tag 指向触发 workflow 的 commit，每次 push 都会生成独立发布记录。
+- Release tag 固定为 `Prerelease`，并标记为 prerelease。
+- 每次发布都会强制把 `Prerelease` tag 移到触发 workflow 的 commit，并删除、重建
+  同名 Release，因此预发布通道只保留最新一组 DMG。
+- workflow 使用并发组串行执行发布，避免多个运行同时移动同一个 tag。
+- 本地正式发布仍使用不可变的 `v<版本>` tag；已存在但指向不同 commit 时会拒绝覆盖。
 
 workflow 只使用仓库内置的 `GITHUB_TOKEN`，仓库需要允许 Actions 具有
 `contents: write` 权限。发布包仍然使用 ad-hoc 签名且不执行 Apple 公证。

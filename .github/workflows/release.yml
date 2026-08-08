@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: clash-meow-prerelease
+  cancel-in-progress: false
+
 jobs:
   metadata:
     name: 读取应用版本
@@ -15,7 +19,6 @@ jobs:
     timeout-minutes: 10
     outputs:
       package_version: ${{ steps.version.outputs.package_version }}
-      release_tag: ${{ steps.version.outputs.release_tag }}
 
     steps:
       - name: 检出代码
@@ -37,7 +40,6 @@ jobs:
             exit 1
           fi
           echo "package_version=$version" >> "$GITHUB_OUTPUT"
-          echo "release_tag=v$version-build.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
 
   test:
     name: 运行 Swift 测试
@@ -118,9 +120,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PACKAGE_VERSION: ${{ needs.metadata.outputs.package_version }}
-          RELEASE_TAG: ${{ needs.metadata.outputs.release_tag }}
+          RELEASE_TAG: Prerelease
           RELEASE_TARGET: ${{ github.sha }}
           RELEASE_REMOTE: origin
+          MOVING_TAG: "1"
           PRERELEASE: "1"
           SKIP_BUILD: "1"
         run: ./scripts/release.sh
