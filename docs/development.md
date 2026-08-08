@@ -104,12 +104,13 @@ privileged helper，不应用于发布。
 ## 构建发布包
 
 ```bash
+make setup
 ./scripts/build-release.sh 0.1.0
 ```
 
 该命令会自动执行以下操作：
 
-1. 下载并严格校验锁文件指定的 arm64 与 x86_64 Mihomo、GeoData、源码和许可证。
+1. 复核 `make setup` 已准备的 arm64 与 x86_64 Mihomo、GeoData 和许可证缓存。
 2. 解析 Xcode Swift Package 依赖并运行 `swift test`；设置 `SKIP_TESTS=1`
    可以跳过测试。
 3. 分别构建 arm64 和 x86_64 Release Archive；每个 App 只包含对应架构的
@@ -167,6 +168,9 @@ Release 不存在时，脚本使用 GitHub 自动生成的更新说明创建 Rel
 make release
 ```
 
+`release` 目标依赖 `setup`，因此会先下载并校验双架构运行时，再执行打包和上传；
+`build-release.sh` 内部只复核缓存，不会再次下载。
+
 该命令默认读取 Xcode 的 `MARKETING_VERSION`，并上传到对应的 `v<版本>` tag；
 tag 不存在时，会在打包成功后创建并通过 Git 推送，再创建 GitHub Release。
 需要覆盖版本、tag 或目标分支时使用：
@@ -178,7 +182,8 @@ PACKAGE_VERSION=0.1.0 RELEASE_TAG=v0.1.0 RELEASE_TARGET=main make release
 ## GitHub Actions 自动发布
 
 `.github/workflows/release.yml` 监听 `release` 分支的每次 push，使用 GitHub
-托管的 macOS runner 自动执行双架构打包并上传 GitHub Release。
+托管的 macOS runner 自动执行 `make release`。该目标会先执行 `make setup`，
+然后完成双架构打包并上传 GitHub Release。
 
 自动发布使用以下版本约定：
 

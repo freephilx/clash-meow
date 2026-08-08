@@ -260,7 +260,7 @@ def cached_artifact(
             destination.unlink()
         if offline:
             raise RuntimeToolError(
-                f"Missing cached artifact for {label}. Run scripts/prepare-mihomo-runtime.sh first."
+                f"Missing cached artifact for {label}. Run make setup first."
             )
 
         partial = artifacts_root / f".{expected_digest}.partial"
@@ -506,7 +506,7 @@ def prepared_paths(
     if not common_state_is_valid(common_root, lock_digest):
         raise RuntimeToolError(
             "Prepared common Mihomo resources are missing or invalid. "
-            "Run scripts/prepare-mihomo-runtime.sh first."
+            "Run make setup first."
         )
     paths: dict[str, Path] = {}
     for architecture in architectures:
@@ -515,7 +515,7 @@ def prepared_paths(
         if not architecture_state_is_valid(architecture_root, lock_digest, artifact):
             raise RuntimeToolError(
                 f"Prepared Mihomo {architecture} runtime is missing or invalid. "
-                "Run scripts/prepare-mihomo-runtime.sh first."
+                "Run make setup first."
             )
         paths[architecture] = architecture_root
     return common_root, paths
@@ -650,4 +650,3 @@ if __name__ == "__main__":
     except RuntimeToolError as error:
         print(f"error: {error}", file=sys.stderr)
         raise SystemExit(1)
-

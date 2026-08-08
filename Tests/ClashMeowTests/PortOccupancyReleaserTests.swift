@@ -4,31 +4,25 @@ import Testing
 
 struct PortOccupancyReleaserTests {
     @Test func administratorReleaseUsesNormalPermissionForOwnedProcessFirst() throws {
-        let portFile = FileManager.default.temporaryDirectory
-            .appending(path: "clash-meow-port-test-\(UUID().uuidString).txt")
-        defer { try? FileManager.default.removeItem(at: portFile) }
-
         let process = Process()
+        let standardOutput = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
         process.arguments = [
             "-c",
             """
             import signal
             import socket
-            import sys
 
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.bind(("127.0.0.1", 0))
             sock.listen(1)
-            with open(sys.argv[1], "w") as file:
-                file.write(str(sock.getsockname()[1]))
+            print(sock.getsockname()[1], flush=True)
             signal.pause()
-            """,
-            portFile.path
+            """
         ]
 
-        process.standardOutput = Pipe()
+        process.standardOutput = standardOutput
         process.standardError = Pipe()
         try process.run()
         defer {
@@ -37,13 +31,9 @@ struct PortOccupancyReleaserTests {
             }
         }
 
-        let deadline = Date().addingTimeInterval(2)
-        while !FileManager.default.fileExists(atPath: portFile.path), Date() < deadline {
-            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
-        }
-        let portText = try String(contentsOf: portFile, encoding: .utf8)
+        let portText = String(data: standardOutput.fileHandleForReading.availableData, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let port = try #require(Int(portText))
+        let port = try #require(portText.flatMap(Int.init))
 
         PortOccupancyReleaser.releaseUsingAdministratorPrivileges(ports: [port])
 

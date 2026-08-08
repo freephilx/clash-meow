@@ -67,9 +67,10 @@ privileged helper 同样只允许 App bundle 内上述两个规范路径。启�
 
 ## 发布
 
-`scripts/build-release.sh` 会自动准备所需锁定制品、解析 Swift Package 依赖、运行
-测试，并生成 Apple Silicon 与 Intel 两个 DMG。当前发布流程按项目要求仅使用
-ad-hoc 签名，不执行 Developer ID 签名或 Apple 公证。
+`make release` 会先通过 `make setup` 准备锁定制品，再调用
+`scripts/build-release.sh` 复核缓存、解析 Swift Package 依赖、运行测试，并生成
+Apple Silicon 与 Intel 两个 DMG。当前发布流程按项目要求仅使用 ad-hoc 签名，
+不执行 Developer ID 签名或 Apple 公证。
 
 可用 `make release` 串行执行打包和 GitHub Release 上传；tag 不存在时，会在
 打包成功后通过 Git 推送，再创建 Release。可通过 `RELEASE_TARGET` 指定目标

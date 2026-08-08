@@ -21,8 +21,9 @@ usage() {
   cat <<'EOF'
 Usage: scripts/build-release.sh [version]
 
-Prepare locked dependencies and build ad-hoc signed Apple Silicon and Intel
-DMGs. This command does not use Developer ID signing or Apple notarization.
+Build ad-hoc signed Apple Silicon and Intel DMGs from the prepared runtime
+cache. Run make setup first. This command does not use Developer ID signing or
+Apple notarization.
 
 Environment:
   BUILD_NUMBER       CFBundleVersion; defaults to the Xcode setting.
@@ -215,8 +216,7 @@ for architecture in "${ARCHITECTURES[@]}"; do
   runtime_arguments+=(--arch "$architecture")
 done
 
-echo "==> Preparing checksum-locked Mihomo dependencies"
-/usr/bin/python3 "$RUNTIME_TOOL" prepare "${runtime_arguments[@]}"
+echo "==> Verifying prepared checksum-locked Mihomo dependencies"
 /usr/bin/python3 "$RUNTIME_TOOL" verify "${runtime_arguments[@]}"
 
 echo "==> Resolving Swift package dependencies"
