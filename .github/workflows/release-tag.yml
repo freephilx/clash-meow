@@ -41,8 +41,6 @@ jobs:
       - name: 校验 tag 与应用版本
         id: version
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tag="$RELEASE_TAG"
@@ -61,11 +59,6 @@ jobs:
             echo "error: tag $tag 与应用 MARKETING_VERSION $version 不一致" >&2
             exit 1
           fi
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "error: 正式 Release $tag 已存在，拒绝覆盖" >&2
-            exit 1
-          fi
-
           echo "package_version=$version" >> "$GITHUB_OUTPUT"
           echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
           echo "release_commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -157,6 +150,6 @@ jobs:
           RELEASE_TAG: ${{ needs.metadata.outputs.release_tag }}
           RELEASE_TARGET: ${{ needs.metadata.outputs.release_commit }}
           RELEASE_REMOTE: origin
-          FAIL_IF_RELEASE_EXISTS: "1"
+          MOVING_TAG: "1"
           SKIP_BUILD: "1"
         run: ./scripts/release.sh
