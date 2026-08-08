@@ -1,46 +1,51 @@
 # Clash Meow
 
 <p align="center">
+  <strong>English</strong> | <a href="README.zh-CN.md">简体中文</a>
+</p>
+
+<p align="center">
   <img src="Sources/ClashMeow/Resources/Assets.xcassets/AppIcon.appiconset/icon_256.png" alt="Clash Meow icon" width="128" height="128">
 </p>
 
-Clash Meow 是一个原生 macOS 图形应用，用于运行、管理和观察本地 [mihomo](https://github.com/MetaCubeX/mihomo) 内核。
+Clash Meow is a native macOS graphical application for running, managing, and monitoring a local [mihomo](https://github.com/MetaCubeX/mihomo) core.
 
-![应用截图](docs/images/app-screenshot.png)
+![Application screenshot](docs/images/app-screenshot.png)
 
-## 功能
+## Features
 
-- 启动和停止本地 mihomo 内核，管理订阅与本地 YAML 配置。
-- 概览页展示内核状态、转发模式、节点、系统代理、增强模式（TUN）与实时流量统计。
-- 查看活动连接、客户端流量排行、上传/下载速率曲线。
-- 切换流量转发模式：直连、规则、全局。
-- 开启或关闭系统代理、TUN、局域网访问等网络选项。
+- Start and stop the local mihomo core, and manage subscriptions and local YAML configurations.
+- View core status, routing mode, proxy nodes, system proxy settings, enhanced (TUN) mode, and real-time traffic statistics from the overview page.
+- Inspect active connections, client traffic rankings, and upload/download speed charts.
+- Switch between direct, rule-based, and global routing modes.
+- Enable or disable the system proxy, TUN mode, LAN access, and other network options.
 
-## 更多文档
+## Documentation
 
-开发、构建、打包和实现细节见：
+For development, building, packaging, and implementation details, see:
 
-[开发文档](docs/development.md)
+[Development guide (Chinese)](docs/development.md)
 
-设计调研与实现取舍见：
+For design research and implementation decisions, see:
 
-- [切换配置方案](docs/切换配置.md)
-- [日志方案](docs/日志.md)
+- [Configuration switching (Chinese)](docs/切换配置.md)
+- [Logging (Chinese)](docs/日志.md)
 
-## 参考与致谢
+## References and Acknowledgements
 
-Clash Meow 的部分产品行为、配置管理、日志处理和 macOS 集成方案参考并对照了以下开源项目：
+Some product behavior, configuration management, logging, and macOS integration decisions in Clash Meow were informed by and compared against the following open-source projects:
 
-- [mihomo](https://github.com/MetaCubeX/mihomo)：本项目运行和管理的代理内核。
-- [ClashX.Meta](https://github.com/MetaCubeX/ClashX.Meta)：参考其 macOS 菜单栏、配置切换、系统代理和 privileged helper 相关设计。
-- [Kumo](https://github.com/ProjectKumo/KumoApp)：参考其 Profile、受控运行时配置、日志和 core lifecycle 分层思路。
-- [Clash Party / Mihomo Party](https://github.com/mihomo-party-org/clash-party)：参考其 Profile 切换、运行时配置生成、热重载和失败回滚策略。
+- [mihomo](https://github.com/MetaCubeX/mihomo): the proxy core run and managed by this project.
+- [ClashX.Meta](https://github.com/MetaCubeX/ClashX.Meta): referenced for its macOS menu bar, configuration switching, system proxy, and privileged helper designs.
+- [Kumo](https://github.com/ProjectKumo/KumoApp): referenced for its Profile model, managed runtime configuration, logging, and layered core lifecycle design.
+- [Clash Party / Mihomo Party](https://github.com/mihomo-party-org/clash-party): referenced for its Profile switching, runtime configuration generation, hot reload, and failure rollback strategies.
 
-上述项目的版权和许可证归各自项目所有。本文档中的“参考”指设计调研、行为对照和实现取舍依据；除非另有说明，本仓库不声明复制或再分发这些项目的源代码。
+Copyright and licenses for these projects belong to their respective owners. "Referenced" here means they were used for design research, behavior comparison, and implementation decision-making. Unless otherwise stated, this repository does not claim to copy or redistribute their source code.
 
-## 免责声明
-- 本项目代码 100% 由 AI Agent 参与生成与修改完成。
-- 本项目按“现状（AS IS）”提供，不提供任何形式的明示或默示担保。
-- 使用本项目产生的任何后果（包括但不限于网络中断、账号风险、数据丢失、配置错误、系统异常等）由使用者自行承担。
-- 作者不对任何直接、间接、附带、特殊或后果性损失承担责任。
-- 作者更建议您提交由 AI Agent 生成或修改的代码，而非手写代码，以保持生成过程一致。
+## Disclaimer
+
+- All code in this project has been generated or modified with the participation of AI Agents.
+- This project is provided "AS IS", without warranties of any kind, express or implied.
+- You are solely responsible for any consequences of using this project, including but not limited to network disruptions, account risks, data loss, configuration errors, or system failures.
+- The author is not liable for any direct, indirect, incidental, special, or consequential damages.
+- To keep the development process consistent, the author recommends contributing code generated or modified by AI Agents rather than handwritten code.
