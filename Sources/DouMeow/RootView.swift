@@ -30,6 +30,7 @@ private enum SidebarDestination: String, CaseIterable, Identifiable {
     case connections = "连接"
     case logs = "日志"
     case rules = "规则"
+    case healthCheck = "健康检查"
 
     var id: String { rawValue }
 
@@ -41,6 +42,7 @@ private enum SidebarDestination: String, CaseIterable, Identifiable {
         case .connections: "network"
         case .logs: "doc.text.magnifyingglass"
         case .rules: "list.bullet.rectangle"
+        case .healthCheck: "heart.text.square"
         }
     }
 }
@@ -107,6 +109,13 @@ struct RootView: View {
                             .padding(.horizontal, 10)
                             .padding(.bottom, 2)
 
+                        SidebarDestinationRow(
+                            destination: .healthCheck,
+                            isSelected: selection == .healthCheck
+                        ) {
+                            selection = .healthCheck
+                        }
+
                         SidebarSettingsRow()
                     }
                 }
@@ -153,6 +162,8 @@ struct RootView: View {
             LogsContent()
         case .rules:
             RulesContent()
+        case .healthCheck:
+            HealthCheckContent()
         }
     }
 
@@ -235,6 +246,554 @@ private struct PageScaffold<Content: View>: View {
         .navigationTitle("")
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(DouMeowPalette.page)
+    }
+}
+
+private struct HealthCheckContent: View {
+    @EnvironmentObject private var state: AppState
+    @State private var refreshID = UUID()
+    @State private var isRefreshing = false
+    @State private var controllerCheck = ControllerHealthCheck.notChecked
+    @State private var systemProxyCheck = SystemProxyHealthCheck.notChecked
+    @State private var checkedAt: Date?
+    @State private var isShowingNetworkDiagnostics = false
+
+    private var helperManager: PrivilegedHelperManager {
+        .shared
+    }
+
+    private var configURL: URL {
+        state.currentProfile?.fileURL ?? state.core.configFile
+    }
+
+    private var configExists: Bool {
+        FileManager.default.fileExists(atPath: configURL.path)
+    }
+
+    private var tunEnabled: Bool {
+        state.displayedConfig?.tun?.enable == true
+    }
+
+    var body: some View {
+        PageScaffold(title: "健康检查") {
+            VStack(spacing: 0) {
+                header
+
+                Divider()
+
+                HealthCheckRow(title: "芯片", subtitle: HealthDeviceInformation.chip)
+                Divider()
+                HealthCheckRow(title: "系统", subtitle: HealthDeviceInformation.system)
+                Divider()
+                helperRow
+                Divider()
+                coreRow
+                Divider()
+                controllerRow
+                Divider()
+                configurationRow
+                Divider()
+                tunRow
+                Divider()
+                systemProxyRow
+                Divider()
+                latencyRow(
+                    title: "公网连接",
+                    value: state.internetLatencySnapshot.internetMs,
+                    unavailableState: .failed
+                )
+                Divider()
+                latencyRow(
+                    title: "默认网关",
+                    value: state.internetLatencySnapshot.routerMs,
+                    unavailableState: .warning
+                )
+                Divider()
+                latencyRow(
+                    title: "DNS 解析",
+                    value: state.internetLatencySnapshot.dnsMs,
+                    unavailableState: .failed
+                )
+                Divider()
+                proxyChainRow
+                Divider()
+
+                Label(checkedAtText, systemImage: "clock")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 14)
+            }
+            .surfaceCard(cornerRadius: 8)
+        }
+        .task(id: refreshID) {
+            await refreshHealthStatus()
+        }
+        .sheet(isPresented: $isShowingNetworkDiagnostics) {
+            NetworkDiagnosticsSheet()
+                .environmentObject(state)
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("健康检查")
+                    .font(.headline)
+                Text("检查 DouMeow、Mihomo 与当前网络的实际可用状态。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Button {
+                isShowingNetworkDiagnostics = true
+                Task { await state.diagnoseInternetLatency() }
+            } label: {
+                Label("网络诊断", systemImage: "stethoscope")
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
+
+            Divider()
+                .frame(height: 16)
+
+            Button {
+                refreshID = UUID()
+            } label: {
+                if isRefreshing {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                }
+            }
+            .buttonStyle(.borderless)
+            .frame(width: 24, height: 24)
+            .disabled(isRefreshing)
+            .help("刷新全部健康检查状态")
+            .accessibilityLabel("刷新全部健康检查状态")
+        }
+        .padding(20)
+    }
+
+    private var helperRow: some View {
+        let canInstall = helperManager.canInstallBundledHelper
+        let isInstalled = helperManager.isInstalled
+        let title = canInstall ? (isInstalled ? "已安装" : "未安装") : "开发环境"
+        let healthState: HealthCheckState = canInstall ? (isInstalled ? .ready : .warning) : .inactive
+
+        return HealthCheckRow(
+            title: "管理员助手",
+            subtitle: canInstall ? "用于安全地启动内核与调整系统网络设置。" : "当前进程不是应用程序包，不检查管理员助手。",
+            statusTitle: title,
+            state: healthState
+        )
+    }
+
+    private var coreRow: some View {
+        let subtitle: String
+        let healthState: HealthCheckState
+
+        switch state.core.status {
+        case .running:
+            subtitle = state.version?.version.map { "Mihomo \($0)" } ?? "Mihomo 进程正在运行。"
+            healthState = .ready
+        case .starting:
+            subtitle = "正在启动 Mihomo 并等待 Controller。"
+            healthState = .checking
+        case .stopped:
+            subtitle = "Mihomo 当前未运行。"
+            healthState = .inactive
+        case .missingBinary:
+            subtitle = "未找到与当前芯片匹配的 Mihomo 可执行文件。"
+            healthState = .failed
+        case .failed(let message):
+            subtitle = message
+            healthState = .failed
+        }
+
+        return HealthCheckRow(
+            title: "Mihomo",
+            subtitle: subtitle,
+            statusTitle: state.core.status.title,
+            state: healthState
+        )
+    }
+
+    private var controllerRow: some View {
+        HealthCheckRow(
+            title: "Controller",
+            subtitle: controllerCheck.subtitle(port: state.controllerPort),
+            statusTitle: controllerCheck.title,
+            state: controllerCheck.healthState
+        )
+    }
+
+    private var configurationRow: some View {
+        let healthState: HealthCheckState
+        let statusTitle: String
+
+        if !configExists {
+            healthState = .failed
+            statusTitle = "文件缺失"
+        } else if state.displayedConfig == nil {
+            healthState = .warning
+            statusTitle = "未解析"
+        } else {
+            healthState = .ready
+            statusTitle = "可用"
+        }
+
+        return HealthCheckRow(
+            title: "当前配置",
+            subtitle: "\(state.currentProfileName) · \(configURL.path(percentEncoded: false))",
+            statusTitle: statusTitle,
+            state: healthState
+        )
+    }
+
+    private var tunRow: some View {
+        let statusTitle: String
+        let healthState: HealthCheckState
+
+        if tunEnabled, state.core.status.isHealthy {
+            statusTitle = "已启用"
+            healthState = .ready
+        } else if tunEnabled {
+            statusTitle = "等待内核"
+            healthState = .warning
+        } else {
+            statusTitle = "未启用"
+            healthState = .inactive
+        }
+
+        let subtitle = tunEnabled
+            ? "通过 \(state.tunDevice) 接管不遵循系统代理的应用流量。"
+            : "未接管不遵循系统代理的应用流量。"
+        return HealthCheckRow(
+            title: "增强模式",
+            subtitle: subtitle,
+            statusTitle: statusTitle,
+            state: healthState
+        )
+    }
+
+    private var systemProxyRow: some View {
+        HealthCheckRow(
+            title: "系统代理",
+            subtitle: systemProxyCheck.subtitle,
+            statusTitle: systemProxyCheck.title,
+            state: systemProxyCheck.healthState
+        )
+    }
+
+    private func latencyRow(
+        title: String,
+        value: Int?,
+        unavailableState: HealthCheckState
+    ) -> some View {
+        let statusTitle: String
+        let healthState: HealthCheckState
+
+        if let value {
+            statusTitle = "\(value) ms"
+            healthState = .ready
+        } else if isRefreshing || state.isDiagnosingInternetLatency {
+            statusTitle = "检查中"
+            healthState = .checking
+        } else if state.internetLatencySnapshot.measuredAt == nil {
+            statusTitle = "未检查"
+            healthState = .inactive
+        } else {
+            statusTitle = "无响应"
+            healthState = unavailableState
+        }
+
+        return HealthCheckRow(
+            title: title,
+            subtitle: latencyDetail(for: title),
+            statusTitle: statusTitle,
+            state: healthState
+        )
+    }
+
+    private var proxyChainRow: some View {
+        guard let entry = state.internetLatencySnapshot.entries.first(where: { $0.title == "测试代理链" }) else {
+            return HealthCheckRow(
+                title: "代理链",
+                subtitle: state.core.status.isHealthy ? "等待测试当前选中节点。" : "Mihomo 未运行，跳过代理链测试。",
+                statusTitle: isRefreshing ? "检查中" : "未检查",
+                state: isRefreshing ? .checking : .inactive
+            )
+        }
+
+        let healthState: HealthCheckState = switch entry.level {
+        case .success: .ready
+        case .warning: .warning
+        case .info: .inactive
+        }
+        let statusTitle = switch entry.level {
+        case .success: "可用"
+        case .warning: "异常"
+        case .info: "已跳过"
+        }
+        return HealthCheckRow(
+            title: "代理链",
+            subtitle: entry.message,
+            statusTitle: statusTitle,
+            state: healthState
+        )
+    }
+
+    private var checkedAtText: String {
+        guard let checkedAt else {
+            return isRefreshing ? "正在检查" : "尚未检查"
+        }
+        return "检查时间：\(Self.timeFormatter.string(from: checkedAt))"
+    }
+
+    private func latencyDetail(for title: String) -> String {
+        let entryTitle: String = switch title {
+        case "默认网关": "路由器"
+        case "DNS 解析": "测试 DNS"
+        default: "测试直连策略"
+        }
+        return state.internetLatencySnapshot.entries.first(where: { $0.title == entryTitle })?.message
+            ?? "等待网络诊断结果。"
+    }
+
+    @MainActor
+    private func refreshHealthStatus() async {
+        isRefreshing = true
+        controllerCheck = state.core.status.isHealthy ? .checking : .coreStopped
+        systemProxyCheck = .checking
+
+        if DashboardDemoMode.isEnabled {
+            controllerCheck = .available(version: state.version?.version)
+            systemProxyCheck = state.systemProxyEnabled
+                ? .enabled(service: "Wi-Fi", port: state.systemProxyPort)
+                : .disabled(service: "Wi-Fi")
+        }
+
+        async let controllerRefresh: Void = refreshControllerIfNeeded()
+        async let systemProxyRefresh: Void = refreshSystemProxyIfNeeded()
+        await state.diagnoseInternetLatency()
+        _ = await controllerRefresh
+        _ = await systemProxyRefresh
+        guard !Task.isCancelled else { return }
+
+        checkedAt = Date()
+        isRefreshing = false
+    }
+
+    @MainActor
+    private func refreshControllerIfNeeded() async {
+        guard !DashboardDemoMode.isEnabled, state.core.status.isHealthy else { return }
+
+        do {
+            let version = try await state.api.version()
+            guard !Task.isCancelled else { return }
+            controllerCheck = .available(version: version.version)
+        } catch {
+            guard !Task.isCancelled else { return }
+            controllerCheck = .unavailable
+        }
+    }
+
+    @MainActor
+    private func refreshSystemProxyIfNeeded() async {
+        guard !DashboardDemoMode.isEnabled else { return }
+
+        let port = state.systemProxyPort
+        let result = await Task.detached(priority: .utility) {
+            let controller = SystemProxyController()
+            do {
+                let configuration = try controller.resolvedConfiguration(port: port)
+                return switch try controller.health(configuration: configuration) {
+                case .enabled:
+                    SystemProxyHealthCheck.enabled(
+                        service: configuration.networkService,
+                        port: configuration.port
+                    )
+                case .disabled:
+                    SystemProxyHealthCheck.disabled(service: configuration.networkService)
+                case .mismatched:
+                    SystemProxyHealthCheck.mismatched(
+                        service: configuration.networkService,
+                        expectedPort: configuration.port
+                    )
+                }
+            } catch {
+                return SystemProxyHealthCheck.unavailable
+            }
+        }.value
+
+        guard !Task.isCancelled else { return }
+        systemProxyCheck = result
+    }
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+}
+
+private enum HealthDeviceInformation {
+    static let chip: String = {
+        #if arch(arm64)
+        "Apple Silicon"
+        #elseif arch(x86_64)
+        "Intel"
+        #else
+        "未知架构"
+        #endif
+    }()
+
+    static let system = ProcessInfo.processInfo.operatingSystemVersionString
+}
+
+private enum HealthCheckState {
+    case ready
+    case checking
+    case warning
+    case failed
+    case inactive
+
+    var color: Color {
+        switch self {
+        case .ready: DouMeowPalette.accent
+        case .checking, .warning: DouMeowPalette.orange
+        case .failed: .red
+        case .inactive: .secondary
+        }
+    }
+}
+
+private enum ControllerHealthCheck {
+    case notChecked
+    case checking
+    case available(version: String?)
+    case unavailable
+    case coreStopped
+
+    var title: String {
+        switch self {
+        case .notChecked: "未检查"
+        case .checking: "检查中"
+        case .available: "可用"
+        case .unavailable: "不可用"
+        case .coreStopped: "未启动"
+        }
+    }
+
+    var healthState: HealthCheckState {
+        switch self {
+        case .notChecked, .coreStopped: .inactive
+        case .checking: .checking
+        case .available: .ready
+        case .unavailable: .failed
+        }
+    }
+
+    func subtitle(port: Int) -> String {
+        switch self {
+        case .notChecked:
+            "尚未连接本地 Controller。"
+        case .checking:
+            "正在检查 127.0.0.1:\(port)。"
+        case .available(let version):
+            version.map { "127.0.0.1:\(port) · Mihomo \($0)" } ?? "127.0.0.1:\(port) 已响应。"
+        case .unavailable:
+            "127.0.0.1:\(port) 未响应，请检查内核日志。"
+        case .coreStopped:
+            "Mihomo 未运行，未检查本地 Controller。"
+        }
+    }
+}
+
+private enum SystemProxyHealthCheck: Sendable {
+    case notChecked
+    case checking
+    case enabled(service: String, port: Int)
+    case disabled(service: String)
+    case mismatched(service: String, expectedPort: Int)
+    case unavailable
+
+    var title: String {
+        switch self {
+        case .notChecked: "未检查"
+        case .checking: "检查中"
+        case .enabled: "已启用"
+        case .disabled: "未启用"
+        case .mismatched: "配置不一致"
+        case .unavailable: "无法读取"
+        }
+    }
+
+    var healthState: HealthCheckState {
+        switch self {
+        case .notChecked, .disabled: .inactive
+        case .checking: .checking
+        case .enabled: .ready
+        case .mismatched: .warning
+        case .unavailable: .failed
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .notChecked:
+            "尚未读取当前主网络服务的代理设置。"
+        case .checking:
+            "正在读取 HTTP、HTTPS 与 SOCKS 代理设置。"
+        case .enabled(let service, let port):
+            "\(service) 的 HTTP、HTTPS 与 SOCKS 均指向 127.0.0.1:\(port)。"
+        case .disabled(let service):
+            "\(service) 未启用 HTTP、HTTPS 或 SOCKS 系统代理。"
+        case .mismatched(let service, let expectedPort):
+            "\(service) 的代理协议未全部指向 127.0.0.1:\(expectedPort)。"
+        case .unavailable:
+            "无法读取当前主网络服务的系统代理设置。"
+        }
+    }
+}
+
+private struct HealthCheckRow: View {
+    let title: String
+    let subtitle: String
+    var statusTitle: String?
+    var state: HealthCheckState = .inactive
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .textSelection(.enabled)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if let statusTitle {
+                Text(statusTitle)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                    .foregroundStyle(state.color)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(state.color.opacity(0.10), in: Capsule())
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
     }
 }
 

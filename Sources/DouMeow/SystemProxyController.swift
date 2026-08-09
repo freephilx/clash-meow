@@ -1,6 +1,6 @@
 import Foundation
 
-struct SystemProxyConfiguration: Equatable {
+struct SystemProxyConfiguration: Equatable, Sendable {
     var networkService: String
     var host: String
     var port: Int
@@ -10,6 +10,18 @@ struct SystemProxyConfiguration: Equatable {
         self.host = host
         self.port = port
     }
+}
+
+enum SystemProxyHealth: Equatable, Sendable {
+    case enabled
+    case disabled
+    case mismatched
+}
+
+struct SystemProxyProtocolState: Equatable, Sendable {
+    let isEnabled: Bool
+    let host: String?
+    let port: Int?
 }
 
 enum SystemProxyError: LocalizedError {
@@ -111,6 +123,53 @@ struct SystemProxyController {
             service = try activeNetworkService()
         }
         return SystemProxyConfiguration(networkService: service, host: "127.0.0.1", port: port)
+    }
+
+    func health(configuration: SystemProxyConfiguration) throws -> SystemProxyHealth {
+        let commands = ["-getwebproxy", "-getsecurewebproxy", "-getsocksfirewallproxy"]
+        let states = try commands.map { command in
+            let output = try runCapture(
+                executable: "/usr/sbin/networksetup",
+                arguments: [command, configuration.networkService]
+            )
+            return try Self.proxyProtocolState(from: output)
+        }
+
+        if states.allSatisfy({ !$0.isEnabled }) {
+            return .disabled
+        }
+        if states.allSatisfy({ state in
+            state.isEnabled
+                && state.host?.localizedCaseInsensitiveCompare(configuration.host) == .orderedSame
+                && state.port == configuration.port
+        }) {
+            return .enabled
+        }
+        return .mismatched
+    }
+
+    static func proxyProtocolState(from output: String) throws -> SystemProxyProtocolState {
+        let fields = output
+            .split(whereSeparator: \.isNewline)
+            .reduce(into: [String: String]()) { result, line in
+                let parts = line.split(separator: ":", maxSplits: 1).map {
+                    String($0).trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                guard parts.count == 2 else { return }
+                result[parts[0].lowercased()] = parts[1]
+            }
+
+        guard let enabledText = fields["enabled"]?.lowercased(),
+              ["yes", "no"].contains(enabledText) else {
+            throw SystemProxyError.commandFailed("无法解析系统代理状态。")
+        }
+        let host = fields["server"].flatMap { $0.isEmpty ? nil : $0 }
+        let port = fields["port"].flatMap(Int.init)
+        return SystemProxyProtocolState(
+            isEnabled: enabledText == "yes",
+            host: host,
+            port: port
+        )
     }
 
     private func run(executable: String, arguments: [String]) throws {

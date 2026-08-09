@@ -217,6 +217,32 @@ struct MihomoYAMLSettingsTests {
         #expect(service == "Wi-Fi")
     }
 
+    @Test func systemProxyProtocolStateParsesEnabledEndpoint() throws {
+        let output = """
+        Enabled: Yes
+        Server: 127.0.0.1
+        Port: 7890
+        Authenticated Proxy Enabled: 0
+        """
+
+        let state = try SystemProxyController.proxyProtocolState(from: output)
+
+        #expect(state == SystemProxyProtocolState(isEnabled: true, host: "127.0.0.1", port: 7890))
+    }
+
+    @Test func systemProxyProtocolStateParsesDisabledEndpoint() throws {
+        let output = """
+        Enabled: No
+        Server:
+        Port: 0
+        Authenticated Proxy Enabled: 0
+        """
+
+        let state = try SystemProxyController.proxyProtocolState(from: output)
+
+        #expect(state == SystemProxyProtocolState(isEnabled: false, host: nil, port: 0))
+    }
+
     @Test func listeningPortsIncludeControllerAndDNSListen() {
         let yaml = """
         port: 7891
