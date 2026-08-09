@@ -62,7 +62,7 @@ struct AppStateModeProxyTests {
         #expect(core.appLogFile == core.logsDirectory.appending(path: "app.log"))
     }
 
-    @Test func applicationLogsPublishToMemoryBeforePageRefresh() async throws {
+    @Test func backgroundApplicationLogsPublishToMemoryBeforePageRefresh() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "clashmeow-live-app-log-\(UUID().uuidString)", directoryHint: .isDirectory)
         AppPersistencePaths.configDirectoryOverrideForTesting = directory
@@ -72,7 +72,10 @@ struct AppStateModeProxyTests {
         }
 
         let state = AppState()
-        AppLogSupport.info("live memory event", module: "Test", logsDirectory: state.core.logsDirectory)
+        let logsDirectory = state.core.logsDirectory
+        await Task.detached {
+            AppLogSupport.info("live memory event", module: "Test", logsDirectory: logsDirectory)
+        }.value
         try await Task.sleep(for: .milliseconds(50))
 
         #expect(state.appLogs.contains { $0.message == "[Test] live memory event" })

@@ -102,12 +102,18 @@ enum AppLogSupport {
             time: LogTimeSupport.displayString(from: timestamp),
             source: .app
         )
-        NotificationCenter.default.post(
-            name: .clashMeowApplicationLogDidAppend,
-            object: nil,
-            userInfo: [ApplicationLogWriter.entryUserInfoKey: entry]
-        )
+        publish(entry)
         writer.append(line, logsDirectory: logsDirectory)
+    }
+
+    private static func publish(_ entry: CoreLogEntry) {
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: .clashMeowApplicationLogDidAppend,
+                object: nil,
+                userInfo: [ApplicationLogWriter.entryUserInfoKey: entry]
+            )
+        }
     }
 }
 
