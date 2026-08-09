@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: clash-meow-prerelease
+  group: dou-meow-prerelease
   cancel-in-progress: false
 
 jobs:
@@ -30,8 +30,8 @@ jobs:
         run: |
           set -euo pipefail
           version="$(xcodebuild \
-            -project ClashMeow.xcodeproj \
-            -scheme ClashMeow \
+            -project DouMeow.xcodeproj \
+            -scheme DouMeow \
             -configuration Release \
             -showBuildSettings 2>/dev/null \
             | awk -F'= ' '{ lhs=$1; gsub(/^[ \t]+|[ \t]+$/, "", lhs); if (lhs == "MARKETING_VERSION") { print $2; exit } }')"

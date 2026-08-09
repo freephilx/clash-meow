@@ -1,14 +1,14 @@
-# Clash Meow
+# DouMeow
 
 <p align="center">
   <a href="README.md">English</a> | <strong>简体中文</strong>
 </p>
 
 <p align="center">
-  <img src="Sources/ClashMeow/Resources/Assets.xcassets/AppIcon.appiconset/icon_256.png" alt="Clash Meow icon" width="128" height="128">
+  <img src="Sources/DouMeow/Resources/Assets.xcassets/AppIcon.appiconset/icon_256.png" alt="DouMeow icon" width="128" height="128">
 </p>
 
-Clash Meow 是一个原生 macOS 图形应用，用于运行、管理和观察本地 [mihomo](https://github.com/MetaCubeX/mihomo) 内核。
+DouMeow 是一个原生 macOS 图形应用，用于运行、管理和观察本地 [mihomo](https://github.com/MetaCubeX/mihomo) 内核。
 
 ![应用截图](docs/images/app-screenshot.png)
 
@@ -33,7 +33,7 @@ Clash Meow 是一个原生 macOS 图形应用，用于运行、管理和观察�
 
 ## 参考与致谢
 
-Clash Meow 的部分产品行为、配置管理、日志处理和 macOS 集成方案参考并对照了以下开源项目：
+DouMeow 的部分产品行为、配置管理、日志处理和 macOS 集成方案参考并对照了以下开源项目：
 
 - [mihomo](https://github.com/MetaCubeX/mihomo)：本项目运行和管理的代理内核。
 - [ClashX.Meta](https://github.com/MetaCubeX/ClashX.Meta)：参考其 macOS 菜单栏、配置切换、系统代理和 privileged helper 相关设计。

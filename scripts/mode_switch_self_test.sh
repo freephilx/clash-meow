@@ -5,15 +5,15 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 echo "==> Building Debug (Xcode)..."
-xcodebuild -project ClashMeow.xcodeproj -scheme ClashMeow -configuration Debug build CODE_SIGNING_ALLOWED=NO -quiet
+xcodebuild -project DouMeow.xcodeproj -scheme DouMeow -configuration Debug build CODE_SIGNING_ALLOWED=NO -quiet
 
-app_path="$(find ~/Library/Developer/Xcode/DerivedData/ClashMeow-*/Build/Products/Debug -name 'Clash Meow.app' -type d 2>/dev/null | /usr/bin/sort | /usr/bin/tail -n 1)"
+app_path="$(find ~/Library/Developer/Xcode/DerivedData/DouMeow-*/Build/Products/Debug -name 'DouMeow.app' -type d 2>/dev/null | /usr/bin/sort | /usr/bin/tail -n 1)"
 if [[ -z "$app_path" ]]; then
   echo "Could not locate built .app in DerivedData" >&2
   exit 1
 fi
 
-binary="$app_path/Contents/MacOS/Clash Meow"
+binary="$app_path/Contents/MacOS/DouMeow"
 if [[ ! -x "$binary" ]]; then
   echo "Could not find executable at $binary" >&2
   exit 1

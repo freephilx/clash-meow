@@ -6,18 +6,18 @@ cd "$repo_root"
 
 output_path="$repo_root/docs/images/app-screenshot.png"
 derived_data="$repo_root/.build/DerivedData"
-app_path="$derived_data/Build/Products/Debug/Clash Meow.app"
+app_path="$derived_data/Build/Products/Debug/DouMeow.app"
 
 xcodebuild \
-  -scheme ClashMeow \
+  -scheme DouMeow \
   -destination 'platform=macOS' \
   -derivedDataPath "$derived_data" \
   build >/dev/null
 
 rm -f "$output_path"
-pkill -x "Clash Meow" >/dev/null 2>&1 || true
+pkill -x "DouMeow" >/dev/null 2>&1 || true
 
-"$app_path/Contents/MacOS/Clash Meow" \
+"$app_path/Contents/MacOS/DouMeow" \
   -dashboardDemo \
   -exportDashboardScreenshot "$output_path"
 

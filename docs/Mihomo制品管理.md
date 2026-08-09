@@ -1,6 +1,6 @@
 # Mihomo 制品管理
 
-Clash Meow 采用与 DouWork 相同的锁文件、内容寻址缓存和 Xcode 离线暂存方式，
+DouMeow 采用与 DouWork 相同的锁文件、内容寻址缓存和 Xcode 离线暂存方式，
 确保开发构建与发布包使用完全相同、可复核的 Mihomo 制品。
 
 ## 锁文件
@@ -28,10 +28,10 @@ make setup
 制品默认存放在：
 
 ```text
-~/Library/Caches/com.clash.meow/vendor/mihomo
+~/Library/Caches/com.dou.meow/vendor/mihomo
 ```
 
-可用 `CLASH_MEOW_RUNTIME_CACHE_DIR` 临时覆盖缓存根目录。下载制品以 SHA-256
+可用 `DOUMEOW_RUNTIME_CACHE_DIR` 临时覆盖缓存根目录。下载制品以 SHA-256
 为文件名保存，解析结果以锁文件 SHA-256 分目录保存，并使用文件锁和原子替换，
 允许并发构建安全复用。
 

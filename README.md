@@ -1,14 +1,14 @@
-# Clash Meow
+# DouMeow
 
 <p align="center">
   <strong>English</strong> | <a href="README.zh-CN.md">简体中文</a>
 </p>
 
 <p align="center">
-  <img src="Sources/ClashMeow/Resources/Assets.xcassets/AppIcon.appiconset/icon_256.png" alt="Clash Meow icon" width="128" height="128">
+  <img src="Sources/DouMeow/Resources/Assets.xcassets/AppIcon.appiconset/icon_256.png" alt="DouMeow icon" width="128" height="128">
 </p>
 
-Clash Meow is a native macOS graphical application for running, managing, and monitoring a local [mihomo](https://github.com/MetaCubeX/mihomo) core.
+DouMeow is a native macOS graphical application for running, managing, and monitoring a local [mihomo](https://github.com/MetaCubeX/mihomo) core.
 
 ![Application screenshot](docs/images/app-screenshot.png)
 
@@ -33,7 +33,7 @@ For design research and implementation decisions, see:
 
 ## References and Acknowledgements
 
-Some product behavior, configuration management, logging, and macOS integration decisions in Clash Meow were informed by and compared against the following open-source projects:
+Some product behavior, configuration management, logging, and macOS integration decisions in DouMeow were informed by and compared against the following open-source projects:
 
 - [mihomo](https://github.com/MetaCubeX/mihomo): the proxy core run and managed by this project.
 - [ClashX.Meta](https://github.com/MetaCubeX/ClashX.Meta): referenced for its macOS menu bar, configuration switching, system proxy, and privileged helper designs.

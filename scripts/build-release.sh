@@ -1,12 +1,12 @@
 #!/bin/bash
-# Build architecture-specific Clash Meow packages with the locked Mihomo runtime.
+# Build architecture-specific DouMeow packages with the locked Mihomo runtime.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-PROJECT="$ROOT/ClashMeow.xcodeproj"
-SCHEME="ClashMeow"
+PROJECT="$ROOT/DouMeow.xcodeproj"
+SCHEME="DouMeow"
 CONFIGURATION="Release"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT/dist/release}"
 BUILD_ROOT="$ROOT/build/release"
@@ -79,14 +79,14 @@ verify_dmg() {
   local mihomo
 
   mount_root="$(mktemp -d "$BUILD_ROOT/verify-dmg-$architecture.XXXXXX")"
-  mounted_app="$mount_root/Clash Meow.app"
+  mounted_app="$mount_root/DouMeow.app"
   if ! hdiutil attach -nobrowse -readonly -mountpoint "$mount_root" "$dmg_path" >/dev/null; then
     rmdir "$mount_root" 2>/dev/null || true
     fail "could not mount generated DMG: $dmg_path"
   fi
 
-  app_binary="$mounted_app/Contents/MacOS/Clash Meow"
-  helper="$mounted_app/Contents/Library/LaunchServices/com.clash.meow.helper"
+  app_binary="$mounted_app/Contents/MacOS/DouMeow"
+  helper="$mounted_app/Contents/Library/LaunchServices/com.dou.meow.helper"
   mihomo="$mounted_app/Contents/Resources/Mihomo/$architecture/bin/mihomo"
 
   [[ -x "$app_binary" ]] || fail "main executable missing from $dmg_path"
@@ -114,18 +114,18 @@ package_architecture() {
   local dmg_path
 
   display_arch="$(display_architecture "$architecture")"
-  archive_path="$BUILD_ROOT/$architecture/ClashMeow.xcarchive"
-  app_path="$archive_path/Products/Applications/Clash Meow.app"
-  app_binary="$app_path/Contents/MacOS/Clash Meow"
-  helper="$app_path/Contents/Library/LaunchServices/com.clash.meow.helper"
+  archive_path="$BUILD_ROOT/$architecture/DouMeow.xcarchive"
+  app_path="$archive_path/Products/Applications/DouMeow.app"
+  app_binary="$app_path/Contents/MacOS/DouMeow"
+  helper="$app_path/Contents/Library/LaunchServices/com.dou.meow.helper"
   mihomo="$app_path/Contents/Resources/Mihomo/$architecture/bin/mihomo"
   package_root="$BUILD_ROOT/$architecture/dmg-root"
-  dmg_name="Clash-Meow-$VERSION-$display_arch.dmg"
+  dmg_name="DouMeow-$VERSION-$display_arch.dmg"
   dmg_path="$OUTPUT_DIR/$dmg_name"
 
   rm -rf "$BUILD_ROOT/$architecture"
   mkdir -p "$(dirname "$archive_path")"
-  echo "==> Archiving Clash Meow $VERSION ($BUILD_NUMBER) for $display_arch"
+  echo "==> Archiving DouMeow $VERSION ($BUILD_NUMBER) for $display_arch"
   xcodebuild archive \
     -project "$PROJECT" \
     -scheme "$SCHEME" \
@@ -141,7 +141,7 @@ package_architecture() {
     CODE_SIGN_IDENTITY=- \
     DEVELOPMENT_TEAM= \
     ENABLE_HARDENED_RUNTIME=NO \
-    CLASH_MEOW_CODE_SIGN_TIMESTAMP=none
+    DOUMEOW_CODE_SIGN_TIMESTAMP=none
 
   [[ -d "$app_path" ]] || fail "archived app not found: $app_path"
   [[ -x "$helper" ]] || fail "privileged helper not found: $helper"
@@ -160,13 +160,13 @@ package_architecture() {
     || fail "archived app version is $actual_version, expected $VERSION"
 
   mkdir -p "$package_root"
-  ditto "$app_path" "$package_root/Clash Meow.app"
+  ditto "$app_path" "$package_root/DouMeow.app"
   ln -s /Applications "$package_root/Applications"
   rm -f "$dmg_path" "$dmg_path.sha256"
 
   echo "==> Creating $dmg_name"
   hdiutil create \
-    -volname "Clash Meow $VERSION" \
+    -volname "DouMeow $VERSION" \
     -srcfolder "$package_root" \
     -format UDZO \
     -ov \
@@ -239,8 +239,8 @@ echo
 echo "Release packages created in $OUTPUT_DIR:"
 for architecture in "${ARCHITECTURES[@]}"; do
   display_arch="$(display_architecture "$architecture")"
-  echo "  Clash-Meow-$VERSION-$display_arch.dmg"
-  echo "  Clash-Meow-$VERSION-$display_arch.dmg.sha256"
+  echo "  DouMeow-$VERSION-$display_arch.dmg"
+  echo "  DouMeow-$VERSION-$display_arch.dmg.sha256"
 done
 echo
 echo "Packages use ad-hoc signing and are not notarized. Gatekeeper may block them on other Macs."

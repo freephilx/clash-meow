@@ -3,19 +3,19 @@
 import PackageDescription
 
 let package = Package(
-    name: "ClashMeow",
+    name: "DouMeow",
     platforms: [
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "ClashMeow", targets: ["ClashMeow"])
+        .executable(name: "DouMeow", targets: ["DouMeow"])
     ],
     dependencies: [
         .package(url: "https://github.com/jpsim/Yams.git", from: "5.1.0")
     ],
     targets: [
         .executableTarget(
-            name: "ClashMeow",
+            name: "DouMeow",
             dependencies: [
                 "Yams"
             ],
@@ -25,8 +25,8 @@ let package = Package(
             ]
         ),
         .testTarget(
-            name: "ClashMeowTests",
-            dependencies: ["ClashMeow"]
+            name: "DouMeowTests",
+            dependencies: ["DouMeow"]
         )
     ]
 )
