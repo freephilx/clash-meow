@@ -1123,53 +1123,23 @@ private struct LogLineCard: View {
 private struct RulesContent: View {
     @EnvironmentObject private var state: AppState
     @State private var searchText = ""
-    @State private var selectedTab: RuleRuntimeTab = .rules
-    @State private var sortOrder: RuleSortOrder = .natural
-    @State private var typeFilters = Set<String>()
-    @State private var policyFilters = Set<String>()
     @State private var isAddingRuleOverride = false
     @State private var editingRule: RuleItem?
-    private let leadingOptionWidth: CGFloat = 78
 
     private var filteredRules: [RuleItem] {
-        let searched = state.rules.filter { rule in
-            let matchesSearch = searchText.isEmpty
+        state.rules.filter { rule in
+            searchText.isEmpty
                 || rule.type.localizedCaseInsensitiveContains(searchText)
                 || rule.payload.localizedCaseInsensitiveContains(searchText)
                 || rule.proxy.localizedCaseInsensitiveContains(searchText)
-            let matchesType = typeFilters.isEmpty || typeFilters.contains(rule.type)
-            let matchesPolicy = policyFilters.isEmpty || policyFilters.contains(rule.proxy)
-            return matchesSearch && matchesType && matchesPolicy
         }
-        return sortOrder.sort(searched)
-    }
-
-    private var filteredRuleProviders: [RuleProviderItem] {
-        guard !searchText.isEmpty else { return state.ruleProviders }
-        return state.ruleProviders.filter {
-            $0.name.localizedCaseInsensitiveContains(searchText)
-                || ($0.behavior?.localizedCaseInsensitiveContains(searchText) ?? false)
-                || ($0.vehicleType?.localizedCaseInsensitiveContains(searchText) ?? false)
-        }
-    }
-
-    private var typeFacets: [(value: String, count: Int)] {
-        facets(for: state.rules.map(\.type))
-    }
-
-    private var policyFacets: [(value: String, count: Int)] {
-        facets(for: state.rules.map(\.proxy))
-    }
-
-    private var hasActiveFilters: Bool {
-        !searchText.isEmpty || !typeFilters.isEmpty || !policyFilters.isEmpty
     }
 
     var body: some View {
         PageScaffold(title: "规则") {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
-                    TextField(selectedTab == .rules ? "搜索规则" : "搜索规则集合", text: $searchText)
+                    TextField("搜索规则", text: $searchText)
                         .textFieldStyle(RuleTextFieldStyle())
 
                     Button {
@@ -1188,91 +1158,41 @@ private struct RulesContent: View {
                     .help("刷新规则")
                     .accessibilityLabel("刷新规则")
 
-                    if selectedTab == .rules {
-                        Button {
-                            isAddingRuleOverride = true
-                        } label: {
-                            Image(systemName: "plus")
-                        }
-                        .buttonStyle(.plain)
-                        .frame(width: 24, height: 24)
-                        .help("添加规则")
-                        .accessibilityLabel("添加规则")
+                    Button {
+                        isAddingRuleOverride = true
+                    } label: {
+                        Image(systemName: "plus")
                     }
-
-                    if selectedTab == .ruleProviders {
-                        Button {
-                            Task { await state.updateAllRuleProviders() }
-                        } label: {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                        }
-                        .buttonStyle(.plain)
-                        .frame(width: 24, height: 24)
-                        .disabled(state.ruleProviders.isEmpty || !state.core.status.isHealthy || !state.updatingRuleProviderNames.isEmpty)
-                        .help("更新全部规则集合")
-                        .accessibilityLabel("更新全部规则集合")
-                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 24, height: 24)
+                    .help("添加规则")
+                    .accessibilityLabel("添加规则")
                 }
 
-                HStack(spacing: 10) {
-                    RuleOptionRow {
-                        ForEach(RuleRuntimeTab.allCases) { tab in
-                            RuleOptionButton(
-                                title: "\(tab.title) \(tab.count(rules: state.rules, providers: state.ruleProviders))",
-                                isSelected: selectedTab == tab,
-                                color: ClashMeowPalette.purple
-                            ) {
-                                selectedTab = tab
-                            }
-                        }
-                    }
-                }
-
-                if selectedTab == .rules {
-                    rulesToolbar
-
-                    if filteredRules.isEmpty {
-                        RuleEmptyView(
-                            title: hasActiveFilters ? "没有匹配规则" : "暂无规则",
-                            message: hasActiveFilters ? "清除筛选或换一个关键词。" : (state.core.status.isHealthy ? "controller 暂未返回规则。" : "启动内核后可读取运行时规则。"),
-                            buttonTitle: hasActiveFilters ? "清除筛选" : "刷新",
-                            systemImage: "list.bullet.rectangle"
-                        ) {
-                            if hasActiveFilters {
-                                clearFilters()
-                            } else {
-                                Task { await state.refreshRules() }
-                            }
-                        }
-                    } else {
-                        LazyVStack(spacing: 8) {
-                            ForEach(filteredRules) { rule in
-                                RuleRow(
-                                    rule: rule,
-                                    isControllerReady: state.core.status.isHealthy,
-                                    edit: { editingRule = rule },
-                                    setEnabled: { isEnabled in
-                                        Task { await state.setRule(rule, isEnabled: isEnabled) }
-                                    }
-                                )
-                            }
+                if filteredRules.isEmpty {
+                    RuleEmptyView(
+                        title: searchText.isEmpty ? "暂无规则" : "没有匹配规则",
+                        message: searchText.isEmpty ? (state.core.status.isHealthy ? "controller 暂未返回规则。" : "启动内核后可读取运行时规则。") : "清除搜索或换一个关键词。",
+                        buttonTitle: searchText.isEmpty ? "刷新" : "清除搜索",
+                        systemImage: "list.bullet.rectangle"
+                    ) {
+                        if searchText.isEmpty {
+                            Task { await state.refreshRules() }
+                        } else {
+                            searchText = ""
                         }
                     }
                 } else {
-                    if filteredRuleProviders.isEmpty {
-                        RuleEmptyView(
-                            title: searchText.isEmpty ? "暂无规则集合" : "没有匹配规则集合",
-                            message: searchText.isEmpty ? "当前配置没有 rule-providers，或 controller 暂未返回规则集合。" : "换一个关键词试试。",
-                            buttonTitle: "刷新",
-                            systemImage: "tray.full"
-                        ) {
-                            Task { await state.refreshRules() }
-                        }
-                    } else {
-                        LazyVStack(spacing: 8) {
-                            ForEach(filteredRuleProviders) { provider in
-                                RuleProviderRow(provider: provider)
-                            }
+                    LazyVStack(spacing: 8) {
+                        ForEach(filteredRules) { rule in
+                            RuleRow(
+                                rule: rule,
+                                isControllerReady: state.core.status.isHealthy,
+                                edit: { editingRule = rule },
+                                setEnabled: { isEnabled in
+                                    Task { await state.setRule(rule, isEnabled: isEnabled) }
+                                }
+                            )
                         }
                     }
                 }
@@ -1291,92 +1211,6 @@ private struct RulesContent: View {
         }
     }
 
-    private var rulesToolbar: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                RuleOptionRow {
-                    ForEach(RuleSortOrder.allCases) { order in
-                        RuleOptionButton(
-                            title: order.title,
-                            isSelected: sortOrder == order,
-                            color: ClashMeowPalette.purple,
-                            width: order == .natural ? leadingOptionWidth : nil
-                        ) {
-                            sortOrder = order
-                        }
-                    }
-                }
-
-                Text("\(filteredRules.count) / \(state.rules.count) 条规则")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(ClashMeowPalette.muted)
-
-                Spacer()
-
-                if hasActiveFilters {
-                    Button {
-                        clearFilters()
-                    } label: {
-                        Text("清除筛选")
-                    }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(ClashMeowPalette.purple)
-                    .padding(.horizontal, 12)
-                    .frame(height: 32)
-                    .background(ClashMeowPalette.purple.opacity(0.10), in: Capsule())
-                }
-            }
-
-            RuleFacetStrip(
-                facets: typeFacets,
-                selectedValues: typeFilters,
-                color: ClashMeowPalette.purple,
-                leadingWidth: leadingOptionWidth
-            ) { value in
-                toggle(value, in: &typeFilters)
-            } clear: {
-                typeFilters.removeAll()
-            }
-
-            RuleFacetStrip(
-                facets: policyFacets,
-                selectedValues: policyFilters,
-                color: ClashMeowPalette.purple,
-                leadingWidth: leadingOptionWidth
-            ) { value in
-                toggle(value, in: &policyFilters)
-            } clear: {
-                policyFilters.removeAll()
-            }
-        }
-    }
-
-    private func clearFilters() {
-        searchText = ""
-        typeFilters.removeAll()
-        policyFilters.removeAll()
-    }
-
-    private func facets(for values: [String]) -> [(value: String, count: Int)] {
-        let counts = values.reduce(into: [String: Int]()) { result, value in
-            result[value, default: 0] += 1
-        }
-        return counts
-            .map { (value: $0.key, count: $0.value) }
-            .sorted {
-                if $0.count != $1.count { return $0.count > $1.count }
-                return $0.value.localizedStandardCompare($1.value) == .orderedAscending
-            }
-    }
-
-    private func toggle(_ value: String, in set: inout Set<String>) {
-        if set.contains(value) {
-            set.remove(value)
-        } else {
-            set.insert(value)
-        }
-    }
 }
 
 private struct RuleEditorView: View {
@@ -1579,133 +1413,6 @@ private struct RuleTextFieldStyle: TextFieldStyle {
                         lineWidth: 1
                     )
             }
-    }
-}
-
-private enum RuleRuntimeTab: String, CaseIterable, Identifiable {
-    case rules
-    case ruleProviders
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .rules: "规则"
-        case .ruleProviders: "规则集合"
-        }
-    }
-
-    func count(rules: [RuleItem], providers: [RuleProviderItem]) -> Int {
-        switch self {
-        case .rules: rules.count
-        case .ruleProviders: providers.count
-        }
-    }
-}
-
-private enum RuleSortOrder: String, CaseIterable, Identifiable {
-    case natural
-    case typeAscending
-    case typeDescending
-    case payloadAscending
-    case payloadDescending
-    case hitDescending
-    case hitAscending
-    case lastHitDescending
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .natural: "配置顺序"
-        case .typeAscending: "类型 A-Z"
-        case .typeDescending: "类型 Z-A"
-        case .payloadAscending: "匹配内容 A-Z"
-        case .payloadDescending: "匹配内容 Z-A"
-        case .hitDescending: "命中多到少"
-        case .hitAscending: "命中少到多"
-        case .lastHitDescending: "最近命中"
-        }
-    }
-
-    func sort(_ rules: [RuleItem]) -> [RuleItem] {
-        switch self {
-        case .natural:
-            return rules
-        case .typeAscending:
-            return rules.sorted { $0.type.localizedStandardCompare($1.type) == .orderedAscending }
-        case .typeDescending:
-            return rules.sorted { $0.type.localizedStandardCompare($1.type) == .orderedDescending }
-        case .payloadAscending:
-            return rules.sorted { $0.displayPayload.localizedStandardCompare($1.displayPayload) == .orderedAscending }
-        case .payloadDescending:
-            return rules.sorted { $0.displayPayload.localizedStandardCompare($1.displayPayload) == .orderedDescending }
-        case .hitDescending:
-            return rules.sorted { left, right in
-                if left.hitCount != right.hitCount { return left.hitCount > right.hitCount }
-                return left.index < right.index
-            }
-        case .hitAscending:
-            return rules.sorted { left, right in
-                if left.hitCount != right.hitCount { return left.hitCount < right.hitCount }
-                return left.index < right.index
-            }
-        case .lastHitDescending:
-            return rules.sorted { left, right in
-                switch (left.lastHit, right.lastHit) {
-                case (.some(let lhs), .some(let rhs)):
-                    if lhs != rhs { return lhs > rhs }
-                    return left.index < right.index
-                case (.some, .none):
-                    return true
-                case (.none, .some):
-                    return false
-                case (.none, .none):
-                    return left.index < right.index
-                }
-            }
-        }
-    }
-}
-
-private struct RuleFacetStrip: View {
-    let facets: [(value: String, count: Int)]
-    let selectedValues: Set<String>
-    let color: Color
-    let leadingWidth: CGFloat
-    let toggle: (String) -> Void
-    let clear: () -> Void
-
-    var body: some View {
-        if !facets.isEmpty {
-            HStack(spacing: 8) {
-                RuleOptionButton(
-                    title: "全部",
-                    isSelected: selectedValues.isEmpty,
-                    color: color,
-                    height: 32,
-                    fontSize: 12,
-                    width: leadingWidth,
-                    action: clear
-                )
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(facets, id: \.value) { facet in
-                            RuleOptionButton(
-                                title: "\(facet.value) \(facet.count)",
-                                isSelected: selectedValues.contains(facet.value),
-                                color: color,
-                                height: 32,
-                                fontSize: 12
-                            ) {
-                                toggle(facet.value)
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -1931,70 +1638,6 @@ private struct RuleRow: View {
                 pasteboard.setString(rule.overrideRuleText, forType: .string)
             }
             Button("修改规则", action: edit)
-        }
-    }
-}
-
-private struct RuleProviderRow: View {
-    @EnvironmentObject private var state: AppState
-    let provider: RuleProviderItem
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "tray.full")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(ClashMeowPalette.purple)
-                .frame(width: 24)
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(provider.name)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(ClashMeowPalette.ink)
-                    .lineLimit(1)
-
-                HStack(spacing: 6) {
-                    RuleChip(text: provider.displayBehavior)
-                    RuleChip(text: provider.displayVehicleType)
-                    RuleChip(text: provider.displayFormat)
-                    RuleChip(text: provider.ruleCountText)
-                    if let updatedAt = provider.updatedAt, !updatedAt.isEmpty {
-                        RuleChip(text: updatedAt)
-                    }
-                }
-                .lineLimit(1)
-            }
-
-            Spacer(minLength: 8)
-
-            Button {
-                Task { await state.updateRuleProvider(provider) }
-            } label: {
-                if state.isUpdatingRuleProvider(provider) {
-                    ProgressView()
-                        .controlSize(.small)
-                        .frame(width: 28, height: 28)
-                } else {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 14, weight: .medium))
-                        .frame(width: 28, height: 28)
-                }
-            }
-            .buttonStyle(.plain)
-            .disabled(!state.core.status.isHealthy || state.isUpdatingRuleProvider(provider))
-            .help("更新规则集合")
-        }
-        .padding(12)
-        .surfaceCard()
-        .contextMenu {
-            Button("复制名称") {
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
-                pasteboard.setString(provider.name, forType: .string)
-            }
-            Button("更新规则集合") {
-                Task { await state.updateRuleProvider(provider) }
-            }
-            .disabled(!state.core.status.isHealthy)
         }
     }
 }
