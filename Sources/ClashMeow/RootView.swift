@@ -57,8 +57,8 @@ struct RootView: View {
     @State private var selection: SidebarDestination? = .overview
 
     private let sidebarGroups = [
-        SidebarGroup(id: "daily", title: "常用", destinations: [.overview, .profiles, .proxies]),
-        SidebarGroup(id: "inspect", title: "检查", destinations: [.connections, .rules, .logs])
+        SidebarGroup(id: "daily", title: "常用", destinations: [.overview]),
+        SidebarGroup(id: "inspect", title: "翻墙", destinations: [.profiles, .proxies, .connections, .rules, .logs])
     ]
 
     var body: some View {
@@ -98,6 +98,16 @@ struct RootView: View {
                                 }
                             }
                         }
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("工具")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(ClashMeowPalette.muted)
+                            .padding(.horizontal, 10)
+                            .padding(.bottom, 2)
+
+                        SidebarSettingsRow()
                     }
                 }
                 .padding(.horizontal, 10)
@@ -146,6 +156,30 @@ struct RootView: View {
         }
     }
 
+}
+
+private struct SidebarSettingsRow: View {
+    var body: some View {
+        SettingsLink {
+            HStack(spacing: 10) {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 15, weight: .medium))
+                    .frame(width: 20, height: 20)
+                Text("偏好设置")
+                    .font(.system(size: 14, weight: .semibold))
+                Spacer(minLength: 0)
+                Text("⌘,")
+                    .font(.system(size: 11))
+                    .foregroundStyle(ClashMeowPalette.muted)
+            }
+            .foregroundStyle(ClashMeowPalette.ink)
+            .padding(.horizontal, 10)
+            .frame(height: 32)
+            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help("偏好设置")
+    }
 }
 
 private struct SidebarDestinationRow: View {
