@@ -56,15 +56,11 @@ struct SettingsView: View {
 
     private func preferenceDetail(for pane: SettingsPane) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(pane.title)
-                    .font(.title2.weight(.semibold))
-                Text(pane.subtitle)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.top, 20)
-            .padding(.horizontal, 24)
+            Text(pane.subtitle)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .padding(.top, 20)
+                .padding(.horizontal, 24)
 
             Form {
                 switch pane {
@@ -79,11 +75,12 @@ struct SettingsView: View {
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
         }
+        .navigationTitle(pane.title)
         .background(.background)
     }
 
     private var generalSection: some View {
-        Section("通用") {
+        Section {
             PreferenceControlRow(
                 title: "内核总开关",
                 description: "与概览右上角总开关一致；开启后，下次打开应用会恢复启动网络内核。"
@@ -114,7 +111,7 @@ struct SettingsView: View {
     }
 
     private var networkSection: some View {
-        Section("网络") {
+        Section {
             PreferenceControlRow(
                 title: "系统代理",
                 description: "接管 macOS 系统代理，需要网络内核已经启动。"

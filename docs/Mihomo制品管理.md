@@ -49,11 +49,15 @@ make setup
 不执行网络下载。产物布局为：
 
 ```text
-Contents/Resources/Mihomo/
-├── arm64/bin/mihomo 或 x86_64/bin/mihomo
-├── GeoData/
-├── ThirdPartyLicenses/
-└── MANIFEST.json
+Contents/Resources/
+├── Licenses/
+│   ├── DouMeow-GPL-3.0.txt
+│   └── THIRD_PARTY_NOTICES.md
+└── Mihomo/
+    ├── arm64/bin/mihomo 或 x86_64/bin/mihomo
+    ├── GeoData/
+    ├── ThirdPartyLicenses/
+    └── MANIFEST.json
 ```
 
 暂存阶段会重新 ad-hoc 签名 Mihomo，并在 manifest 中记录锁文件 SHA、制品 SHA、

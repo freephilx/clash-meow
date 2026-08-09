@@ -248,6 +248,8 @@
 			inputFileListPaths = (
 			);
 			inputPaths = (
+				"$(SRCROOT)/LICENSE",
+				"$(SRCROOT)/THIRD_PARTY_NOTICES.md",
 				"$(SRCROOT)/RuntimeLocks/mihomo.lock.json",
 				"$(SRCROOT)/scripts/mihomo-runtime.py",
 				"$(SRCROOT)/scripts/stage-mihomo-runtime.sh",
@@ -256,6 +258,8 @@
 			outputFileListPaths = (
 			);
 			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Licenses/DouMeow-GPL-3.0.txt",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Licenses/THIRD_PARTY_NOTICES.md",
 				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Mihomo/MANIFEST.json",
 			);
 			runOnlyForDeploymentPostprocessing = 0;

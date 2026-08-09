@@ -3083,29 +3083,30 @@ private struct NetworkManageCard: View {
     }()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "archivebox")
-                    .font(.headline)
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.secondary)
-                    .frame(width: 34, height: 34)
+                    .frame(width: 32, height: 32)
                     .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
 
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 7) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
                         Text(state.currentProfileName)
-                            .font(.headline)
-                            .foregroundStyle(.primary)
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(DouMeowPalette.ink)
+                            .lineLimit(1)
                         Text("YAML")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(DouMeowPalette.muted)
+                            .padding(.horizontal, 7)
+                            .frame(height: 20)
                             .background(Color.secondary.opacity(0.08), in: Capsule())
                     }
                     Text(usageTitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(DouMeowPalette.muted)
                 }
 
                 Spacer()
@@ -3114,59 +3115,59 @@ private struct NetworkManageCard: View {
             }
 
             if let subscription {
-                HStack(alignment: .lastTextBaseline) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("已使用")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(formatByteCount(subscription.used))
-                            .font(.title2.weight(.semibold))
-                            .monospacedDigit()
-                            .foregroundStyle(.primary)
-                    }
-
-                    Spacer()
-
-                    if subscription.total > 0 {
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text("\(Int((subscription.progress ?? 0) * 100))%")
-                                .font(.headline.weight(.semibold))
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .lastTextBaseline) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("已使用")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(DouMeowPalette.muted)
+                            Text(formatByteCount(subscription.used))
+                                .font(.system(size: 24, weight: .bold))
                                 .monospacedDigit()
-                            Text("共 \(formatByteCount(subscription.total))")
-                                .font(.caption)
-                                .monospacedDigit()
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(DouMeowPalette.ink)
                         }
-                    } else {
-                        Text("总量未提供")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+
+                        Spacer()
+
+                        if subscription.total > 0 {
+                            VStack(alignment: .trailing, spacing: 3) {
+                                Text("\(Int((subscription.progress ?? 0) * 100))%")
+                                    .font(.system(size: 16, weight: .bold))
+                                    .monospacedDigit()
+                                Text("共 \(formatByteCount(subscription.total))")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .monospacedDigit()
+                                    .foregroundStyle(DouMeowPalette.muted)
+                            }
+                        } else {
+                            Text("总量未提供")
+                                .font(.system(size: 11, weight: .medium))
+                                .monospacedDigit()
+                                .foregroundStyle(DouMeowPalette.muted)
+                        }
                     }
+
+                    GradientProgressBar(progress: subscription.progress ?? 0, isSelected: true)
+                        .accessibilityLabel("远程配置用量")
+                        .accessibilityValue(usageDetailText)
                 }
-
-                ProgressView(value: subscription.progress ?? 0)
-                    .progressViewStyle(.linear)
-                    .tint(DouMeowPalette.accent)
-                    .accessibilityLabel("远程配置用量")
-                    .accessibilityValue(usageDetailText)
             } else {
-                Label(usageDetailText, systemImage: "chart.bar.xaxis")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+                VStack(alignment: .leading, spacing: 10) {
+                    Label(usageDetailText, systemImage: "chart.bar.xaxis")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(DouMeowPalette.muted)
 
-                ProgressView(value: 0)
-                    .progressViewStyle(.linear)
-                    .tint(DouMeowPalette.accent)
-                    .accessibilityLabel("远程配置用量未提供")
+                    EmptyProgressBar()
+                        .accessibilityLabel("远程配置用量未提供")
+                }
             }
 
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 Label(footerText, systemImage: "clock")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(DouMeowPalette.muted)
                 Spacer()
-                HStack(spacing: 8) {
+                HStack(alignment: .center, spacing: 10) {
                     FooterActionButton(title: "刷新", systemImage: "arrow.clockwise") {
                         Task { await state.refresh() }
                     }
@@ -3178,7 +3179,7 @@ private struct NetworkManageCard: View {
             }
         }
         .padding(20)
-        .frame(minHeight: 174)
+        .frame(maxWidth: .infinity, minHeight: 156, alignment: .topLeading)
         .surfaceCard()
     }
 }
@@ -3190,10 +3191,19 @@ private struct FooterActionButton: View {
 
     var body: some View {
         Button(action: action) {
-            Label(title, systemImage: systemImage)
+            HStack(alignment: .center, spacing: 5) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: 14, height: 14, alignment: .center)
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(height: 14, alignment: .center)
+            }
+            .frame(height: 16, alignment: .center)
         }
         .buttonStyle(.borderless)
         .controlSize(.small)
+        .foregroundStyle(DouMeowPalette.muted)
     }
 }
 
@@ -3240,8 +3250,8 @@ private struct CorePowerSwitch: View {
                     .fill(statusColor)
                     .frame(width: 6, height: 6)
                 Text(state.core.status.title)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(DouMeowPalette.muted)
             }
         }
     }

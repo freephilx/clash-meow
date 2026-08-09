@@ -19,7 +19,11 @@ if [[ ${#args[@]} -eq 0 ]]; then
   exit 1
 fi
 
-exec /usr/bin/python3 "$ROOT/scripts/mihomo-runtime.py" stage \
+/usr/bin/python3 "$ROOT/scripts/mihomo-runtime.py" stage \
   --destination "$DESTINATION" \
   "${args[@]}"
 
+LICENSES_DESTINATION="$(dirname "$DESTINATION")/Licenses"
+mkdir -p "$LICENSES_DESTINATION"
+cp "$ROOT/LICENSE" "$LICENSES_DESTINATION/DouMeow-GPL-3.0.txt"
+cp "$ROOT/THIRD_PARTY_NOTICES.md" "$LICENSES_DESTINATION/THIRD_PARTY_NOTICES.md"

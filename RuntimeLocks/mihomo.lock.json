@@ -48,6 +48,11 @@
       "name": "MetaCubeXD-MIT.txt",
       "url": "https://raw.githubusercontent.com/MetaCubeX/metacubexd/v1.268.4/LICENSE",
       "sha256": "cd0735ba06f26a0008bbca399890c7ca87fe129aacc302c2e33fb03e60a4e8c3"
+    },
+    {
+      "name": "Yams-MIT.txt",
+      "url": "https://raw.githubusercontent.com/jpsim/Yams/5.4.0/LICENSE",
+      "sha256": "0354b0ea403d2e78059c5ae0510a2cfae9f8eb306fcef094ac9fff5b47e20bed"
     }
   ]
 }

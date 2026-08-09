@@ -42,6 +42,13 @@ Some product behavior, configuration management, logging, and macOS integration 
 
 Copyright and licenses for these projects belong to their respective owners. "Referenced" here means they were used for design research, behavior comparison, and implementation decision-making. Unless otherwise stated, this repository does not claim to copy or redistribute their source code.
 
+## License
+
+DouMeow is licensed under the
+[GNU General Public License v3.0 only](LICENSE). Third-party components
+distributed with the project remain subject to their respective licenses; see
+[Third-Party Notices](THIRD_PARTY_NOTICES.md) for details.
+
 ## Disclaimer
 
 - All code in this project has been generated or modified with the participation of AI Agents.
