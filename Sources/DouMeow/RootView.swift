@@ -2814,7 +2814,7 @@ private struct ProfilesListRow: View {
 
                 HStack(spacing: 8) {
                     if let modifiedAt = profile.updatedAt ?? summary?.modifiedAt {
-                        Text(relativeUpdatedAtText(modifiedAt))
+                        Text(relativeProfileUpdatedAtText(modifiedAt))
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(DouMeowPalette.muted)
                     }
@@ -2913,21 +2913,6 @@ private struct ProfilesListRow: View {
         if profile.id == "default" { return "默认" }
         return profile.kind == .remote ? "远端" : "本地"
     }
-
-    private func relativeUpdatedAtText(_ date: Date) -> String {
-        let now = Date()
-        let elapsed = now.timeIntervalSince(date)
-        if elapsed >= 0, elapsed < 60 { return "刚刚" }
-        return Self.relativeTimeFormatter.localizedString(for: date, relativeTo: now)
-    }
-
-    private static let relativeTimeFormatter: RelativeDateTimeFormatter = {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.locale = Locale(identifier: "zh_Hans_CN")
-        formatter.unitsStyle = .full
-        formatter.dateTimeStyle = .numeric
-        return formatter
-    }()
 }
 
 private struct ProfileSubscriptionUsageBlock: View {
@@ -3071,7 +3056,7 @@ private struct NetworkManageCard: View {
             return "到期：\(Self.dateFormatter.string(from: date))"
         }
         if let updatedAt = state.currentProfile?.updatedAt {
-            return "最后更新：\(Self.dateFormatter.string(from: updatedAt))"
+            return "最后更新：\(relativeProfileUpdatedAtText(updatedAt))"
         }
         return "导入或刷新远程配置后显示真实用量"
     }
@@ -4332,4 +4317,15 @@ private func formatSubscriptionUsage(_ subscription: SubscriptionUserInfo) -> St
     guard subscription.total > 0 else { return "\(used) / 未提供总量" }
     let percent = Int((subscription.progress ?? 0) * 100)
     return "\(used) / \(formatByteCount(subscription.total)) · \(percent)%"
+}
+
+private func relativeProfileUpdatedAtText(_ date: Date, relativeTo now: Date = Date()) -> String {
+    let elapsed = now.timeIntervalSince(date)
+    if elapsed >= 0, elapsed < 60 { return "刚刚" }
+
+    let formatter = RelativeDateTimeFormatter()
+    formatter.locale = Locale(identifier: "zh_Hans_CN")
+    formatter.unitsStyle = .full
+    formatter.dateTimeStyle = .numeric
+    return formatter.localizedString(for: date, relativeTo: now)
 }
