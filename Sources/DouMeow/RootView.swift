@@ -2747,6 +2747,7 @@ private struct YAMLProfileSummary: Identifiable {
     let allowLanText: String
     let tunText: String
     let proxyGroupCount: Int
+    let proxyNodeCount: Int
 
     init?(url: URL, config: MihomoConfig?, proxyGroupCount: Int) {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
@@ -2770,10 +2771,11 @@ private struct YAMLProfileSummary: Identifiable {
         self.allowLanText = allowLan == true ? "局域网已开启" : "局域网已关闭"
         self.tunText = tunEnabled == true ? "TUN 已开启" : "TUN 已关闭"
         self.proxyGroupCount = proxyGroupCount
+        self.proxyNodeCount = ProxyNodeInfo.parsed(from: yaml).count
     }
 
     var detailText: String {
-        "\(fileSizeText) · \(lineCount) 行 · 本机端口 \(mixedPortText)"
+        "\(fileSizeText) · \(lineCount) 行 · 本机端口 \(mixedPortText) · \(proxyNodeCount) 个节点"
     }
 }
 
@@ -3040,6 +3042,15 @@ private struct NetworkManageCard: View {
     @EnvironmentObject private var state: AppState
     let openProfiles: () -> Void
 
+    private var currentProfileSummary: YAMLProfileSummary? {
+        guard let profile = state.currentProfile else { return nil }
+        return YAMLProfileSummary(
+            url: profile.fileURL,
+            config: state.displayedConfig,
+            proxyGroupCount: state.visibleProxyGroups.count
+        )
+    }
+
     private var subscription: SubscriptionUserInfo? {
         state.currentProfile?.subscriptionUserInfo
     }
@@ -3074,17 +3085,21 @@ private struct NetworkManageCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center, spacing: 12) {
-                Image(systemName: "archivebox")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 32, height: 32)
-                    .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(state.currentProfileName)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(DouMeowPalette.ink)
+                        .lineLimit(1)
 
-                Text(state.currentProfileName)
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(DouMeowPalette.ink)
-                    .lineLimit(1)
+                    if let summary = currentProfileSummary {
+                        Text(summary.detailText)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(DouMeowPalette.muted)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                }
 
                 Spacer()
 
