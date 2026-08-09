@@ -42,6 +42,7 @@
 		5A0A0A012E10800100000001 /* AppLogSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0A0A022E10800100000001 /* AppLogSupport.swift */; };
 		5A0B0B012E10800100000001 /* RuntimeConfigBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0B0B022E10800100000001 /* RuntimeConfigBuilder.swift */; };
 		5A0B0B052E10800100000001 /* Yams in Frameworks */ = {isa = PBXBuildFile; productRef = 5A0B0B042E10800100000001 /* Yams */; };
+		5A0C0C012E10800100000001 /* NetworkDiagnosticReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0C0C022E10800100000001 /* NetworkDiagnosticReport.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -80,6 +81,7 @@
 		5A0000482E10800100000001 /* InternetLatencyDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InternetLatencyDiagnostics.swift; sourceTree = "<group>"; };
 		5A0A0A022E10800100000001 /* AppLogSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogSupport.swift; sourceTree = "<group>"; };
 		5A0B0B022E10800100000001 /* RuntimeConfigBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeConfigBuilder.swift; sourceTree = "<group>"; };
+		5A0C0C022E10800100000001 /* NetworkDiagnosticReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkDiagnosticReport.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -131,6 +133,7 @@
 				5A00002E2E10800100000001 /* CoreLogSupport.swift */,
 				5A0000342E10800100000001 /* SystemProxyController.swift */,
 				5A0000482E10800100000001 /* InternetLatencyDiagnostics.swift */,
+				5A0C0C022E10800100000001 /* NetworkDiagnosticReport.swift */,
 				5A0000352E10800100000001 /* MihomoYAMLSettings.swift */,
 				5A0000382E10800100000001 /* TrafficSample.swift */,
 				5A00003A2E10800100000001 /* DashboardDemoMode.swift */,
@@ -319,6 +322,7 @@
 				5A00002D2E10800100000001 /* CoreLogSupport.swift in Sources */,
 				5A0000362E10800100000001 /* SystemProxyController.swift in Sources */,
 				5A0000492E10800100000001 /* InternetLatencyDiagnostics.swift in Sources */,
+				5A0C0C012E10800100000001 /* NetworkDiagnosticReport.swift in Sources */,
 				5A0000372E10800100000001 /* MihomoYAMLSettings.swift in Sources */,
 				5A0000392E10800100000001 /* TrafficSample.swift in Sources */,
 				5A00003B2E10800100000001 /* DashboardDemoMode.swift in Sources */,

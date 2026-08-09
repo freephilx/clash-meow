@@ -32,6 +32,10 @@ enum AppPersistencePaths {
     static var logsDirectory: URL {
         runtimeDirectory.appending(path: "logs", directoryHint: .isDirectory)
     }
+
+    static var diagnosticReportsDirectory: URL {
+        runtimeDirectory.appending(path: "diagnostic-reports", directoryHint: .isDirectory)
+    }
 }
 
 enum AppPreferenceStore {

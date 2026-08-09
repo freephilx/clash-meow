@@ -49,6 +49,7 @@ open DouMeow.xcodeproj
 - [增强模式](docs/增强模式.md)
 - [代理测速](docs/代理测速.md)
 - [互联网延迟检测](docs/互联网延迟.md)
+- [网络诊断报告](docs/网络诊断.md)
 - [持久化与数据目录](docs/持久化.md)
 - [开发、构建与发布](docs/development.md)
 

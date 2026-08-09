@@ -328,7 +328,7 @@ private struct HealthCheckContent: View {
             await refreshHealthStatus()
         }
         .sheet(isPresented: $isShowingNetworkDiagnostics) {
-            NetworkDiagnosticsSheet()
+            NetworkDiagnosticReportSheet()
                 .environmentObject(state)
         }
     }
@@ -347,12 +347,13 @@ private struct HealthCheckContent: View {
 
             Button {
                 isShowingNetworkDiagnostics = true
-                Task { await state.diagnoseInternetLatency() }
             } label: {
                 Label("网络诊断", systemImage: "stethoscope")
             }
             .buttonStyle(.borderless)
             .controlSize(.small)
+            .help("收集脱敏日志并生成本地诊断报告")
+            .accessibilityHint("打开网络诊断报告页面")
 
             Divider()
                 .frame(height: 16)
@@ -573,7 +574,7 @@ private struct HealthCheckContent: View {
     @MainActor
     private func refreshHealthStatus() async {
         isRefreshing = true
-        controllerCheck = state.core.status.isHealthy ? .checking : .coreStopped
+        controllerCheck = .checking
         systemProxyCheck = .checking
         localDNSCheck = .checking
 
@@ -602,7 +603,7 @@ private struct HealthCheckContent: View {
 
     @MainActor
     private func refreshControllerIfNeeded() async {
-        guard !DashboardDemoMode.isEnabled, state.core.status.isHealthy else { return }
+        guard !DashboardDemoMode.isEnabled else { return }
 
         do {
             let version = try await state.api.version()
@@ -610,7 +611,7 @@ private struct HealthCheckContent: View {
             controllerCheck = .available(version: version.version)
         } catch {
             guard !Task.isCancelled else { return }
-            controllerCheck = .unavailable
+            controllerCheck = state.core.status.isHealthy ? .unavailable : .coreStopped
         }
     }
 
@@ -733,7 +734,7 @@ private enum ControllerHealthCheck {
         case .unavailable:
             "127.0.0.1:\(port) 未响应，请检查内核日志。"
         case .coreStopped:
-            "Mihomo 未运行，未检查本地 Controller。"
+            "Mihomo 未运行，127.0.0.1:\(port) 未响应。"
         }
     }
 }
@@ -2890,7 +2891,10 @@ private struct ProfilesListRow: View {
             }
 
             if let subscription = profile.subscriptionUserInfo {
-                ProfileSubscriptionUsageBlock(subscription: subscription)
+                ProfileSubscriptionUsageBlock(
+                    subscription: subscription,
+                    isSelected: profile.isCurrent
+                )
             }
         }
         .padding(16)
@@ -2926,6 +2930,7 @@ private struct ProfilesListRow: View {
 
 private struct ProfileSubscriptionUsageBlock: View {
     let subscription: SubscriptionUserInfo
+    let isSelected: Bool
 
     private var usageText: String {
         let used = formatByteCount(subscription.used)
@@ -2960,7 +2965,7 @@ private struct ProfileSubscriptionUsageBlock: View {
                 .foregroundStyle(.secondary)
 
             if let progress = subscription.progress {
-                GradientProgressBar(progress: progress)
+                GradientProgressBar(progress: progress, isSelected: isSelected)
                     .frame(maxWidth: 360)
             } else {
                 EmptyProgressBar()
@@ -3244,6 +3249,14 @@ private struct CorePowerSwitch: View {
 
 private struct GradientProgressBar: View {
     let progress: Double
+    let isSelected: Bool
+
+    private var colors: [Color] {
+        if isSelected {
+            return [DouMeowPalette.accent, DouMeowPalette.accent.opacity(0.72)]
+        }
+        return [Color.secondary.opacity(0.42), Color.secondary.opacity(0.30)]
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -3253,7 +3266,7 @@ private struct GradientProgressBar: View {
                 if progress > 0 {
                     Capsule()
                         .fill(LinearGradient(
-                            colors: [DouMeowPalette.accent, DouMeowPalette.accent.opacity(0.72)],
+                            colors: colors,
                             startPoint: .leading,
                             endPoint: .trailing
                         ))
@@ -3620,13 +3633,207 @@ private struct LatencyCard: View {
             await state.diagnoseInternetLatencyIfNeeded()
         }
         .sheet(isPresented: $isShowingDiagnostics) {
-            NetworkDiagnosticsSheet()
+            InternetLatencyDiagnosticsSheet()
                 .environmentObject(state)
         }
     }
 }
 
-private struct NetworkDiagnosticsSheet: View {
+private struct NetworkDiagnosticReportSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var state: AppState
+    @State private var phase = Phase.ready
+    @State private var collectionTask: Task<Void, Never>?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "stethoscope")
+                    .foregroundStyle(DouMeowPalette.accent)
+                Text("网络诊断")
+                    .font(.headline)
+                Spacer()
+            }
+            .padding(20)
+
+            Divider()
+
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(24)
+
+            Divider()
+
+            footer
+                .padding(20)
+        }
+        .frame(width: 480, height: 320)
+        .foregroundStyle(DouMeowPalette.ink)
+        .onDisappear {
+            collectionTask?.cancel()
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch phase {
+        case .ready:
+            VStack(spacing: 12) {
+                Image(systemName: "doc.zipper")
+                    .font(.system(size: 32))
+                    .foregroundStyle(DouMeowPalette.accent)
+                    .accessibilityHidden(true)
+                Text("生成网络诊断报告")
+                    .font(.title3.weight(.semibold))
+                Text("报告仅包含脱敏后的运行摘要、系统网络现场和近期日志。")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+        case .collecting(let progress):
+            VStack(alignment: .leading, spacing: 14) {
+                Text(progress.title)
+                    .font(.headline)
+                ProgressView(value: progress.fractionCompleted, total: 1)
+                    .progressViewStyle(.linear)
+                    .accessibilityLabel("网络诊断进度")
+                    .accessibilityValue(
+                        "\(Int(progress.fractionCompleted * 100))%，\(progress.title)"
+                    )
+                Text("\(Int(progress.fractionCompleted * 100))%")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: 360)
+
+        case .complete(let archiveURL):
+            VStack(spacing: 12) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 32))
+                    .foregroundStyle(.green)
+                    .accessibilityHidden(true)
+                Text("诊断报告已生成")
+                    .font(.title3.weight(.semibold))
+                Text(archiveURL.lastPathComponent)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .textSelection(.enabled)
+            }
+
+        case .failed(let message):
+            VStack(spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 32))
+                    .foregroundStyle(DouMeowPalette.orange)
+                    .accessibilityHidden(true)
+                Text("网络诊断失败")
+                    .font(.title3.weight(.semibold))
+                Text(message)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: 360)
+        }
+    }
+
+    private var footer: some View {
+        HStack {
+            Button(phase.isCollecting ? "取消" : "关闭") {
+                cancelAndDismiss()
+            }
+            .keyboardShortcut(.cancelAction)
+
+            Spacer()
+
+            switch phase {
+            case .ready:
+                Button("开始网络诊断") {
+                    startCollection()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(DouMeowPalette.accent)
+                .keyboardShortcut(.defaultAction)
+
+            case .collecting:
+                EmptyView()
+
+            case .complete(let archiveURL):
+                Button("查看诊断报告") {
+                    revealInFinder(archiveURL)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(DouMeowPalette.accent)
+                .keyboardShortcut(.defaultAction)
+
+            case .failed:
+                Button("重新开始") {
+                    startCollection()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(DouMeowPalette.accent)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+    }
+
+    private func startCollection() {
+        collectionTask?.cancel()
+        phase = .collecting(.preparing)
+        collectionTask = Task { @MainActor in
+            defer { collectionTask = nil }
+            do {
+                let archiveURL = try await state.generateNetworkDiagnosticReport { progress in
+                    phase = .collecting(progress)
+                }
+                try Task.checkCancellation()
+                phase = .complete(archiveURL)
+            } catch is CancellationError {
+                if phase.isCollecting {
+                    phase = .ready
+                }
+            } catch {
+                phase = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    private func cancelAndDismiss() {
+        collectionTask?.cancel()
+        dismiss()
+    }
+
+    private func revealInFinder(_ archiveURL: URL) {
+        guard FileManager.default.fileExists(atPath: archiveURL.path) else {
+            phase = .failed("诊断报告已不存在，请重新生成。")
+            return
+        }
+        AppLogSupport.info(
+            "已在 Finder 中显示：\(archiveURL.lastPathComponent)",
+            module: "NetworkDiagnostics",
+            logsDirectory: state.core.logsDirectory
+        )
+        NSWorkspace.shared.activateFileViewerSelecting([archiveURL])
+    }
+
+    private enum Phase: Equatable {
+        case ready
+        case collecting(NetworkDiagnosticReportProgress)
+        case complete(URL)
+        case failed(String)
+
+        var isCollecting: Bool {
+            if case .collecting = self { return true }
+            return false
+        }
+    }
+}
+
+private struct InternetLatencyDiagnosticsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var state: AppState
 

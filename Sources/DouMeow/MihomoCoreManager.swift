@@ -21,6 +21,10 @@ final class MihomoCoreManager: ObservableObject {
     let coreLogFile: URL
     let appLogFile: URL
 
+    var managedProcessIdentifier: pid_t? {
+        privilegedCorePID ?? process?.processIdentifier
+    }
+
     init() {
         self.rootDirectory = AppPersistencePaths.configDirectory
         self.runtimeDirectory = AppPersistencePaths.runtimeDirectory
