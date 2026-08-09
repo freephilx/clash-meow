@@ -57,11 +57,12 @@ enum CoreLogSupport {
         case .app:
             return recentLogs(from: appFile, limit: limit, source: .app)
         case .all:
-            return (
-                recentLogs(from: coreFile, limit: limit, source: .core)
-                + recentLogs(from: appFile, limit: limit, source: .app)
-            ).suffix(limit)
-                .map { $0 }
+            return mergedTimeline(
+                recentLogs(from: coreFile, limit: limit, source: .core),
+                recentLogs(from: appFile, limit: limit, source: .app)
+            )
+            .suffix(limit)
+            .map { $0 }
         }
     }
 
@@ -126,18 +127,37 @@ enum CoreLogSupport {
                 id: "\(source.rawValue)-\(index)-\(line.hashValue)",
                 level: parsed.level,
                 message: parsed.message,
+                rawText: line,
                 time: parsed.time,
                 source: source
             )
         }
 
+        let time = parseCoreLogTime(line)
         return CoreLogEntry(
             id: "\(source.rawValue)-\(index)-\(line.hashValue)",
             level: parseCoreLogLevel(line) ?? inferredLevel(in: line),
-            message: line,
-            time: parseCoreLogTime(line),
+            message: value(for: "msg", in: line) ?? line,
+            rawText: line,
+            time: time,
             source: source
         )
+    }
+
+    private static func mergedTimeline(_ coreLogs: [CoreLogEntry], _ appLogs: [CoreLogEntry]) -> [CoreLogEntry] {
+        (appLogs + coreLogs).enumerated().sorted { left, right in
+            switch (left.element.sortTime, right.element.sortTime) {
+            case let (leftTime?, rightTime?) where leftTime != rightTime:
+                return leftTime < rightTime
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            default:
+                return left.offset < right.offset
+            }
+        }
+        .map(\.element)
     }
 
     private static func parseCoreLogLevel(_ line: String) -> String? {
@@ -166,6 +186,22 @@ enum CoreLogSupport {
             return LogTimeSupport.displayString(from: String(line[timeRange]))
         }
         return nil
+    }
+
+    private static func value(for key: String, in line: String) -> String? {
+        let pattern = #"\b"# + NSRegularExpression.escapedPattern(for: key) + #"=(\"(?:\\.|[^\"])*\"|\S+)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+              match.numberOfRanges == 2,
+              let valueRange = Range(match.range(at: 1), in: line) else {
+            return nil
+        }
+        let rawValue = String(line[valueRange])
+        guard rawValue.hasPrefix("\""), rawValue.hasSuffix("\"") else {
+            return rawValue
+        }
+        let quotedData = Data(rawValue.utf8)
+        return (try? JSONDecoder().decode(String.self, from: quotedData)) ?? String(rawValue.dropFirst().dropLast())
     }
 
     private static func parseAppLogLine(_ line: String) -> (time: String?, level: String, message: String) {

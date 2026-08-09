@@ -667,14 +667,48 @@ private struct ConnectionRow: View {
 private struct LogsContent: View {
     @EnvironmentObject private var state: AppState
     @State private var searchText = ""
-    @State private var level: LogLevelFilter = LogPreference.defaultLevel
-    @State private var source: LogSourceFilter = LogPreference.defaultSource
-    @State private var confirmsClearingFile = false
+    @State private var level: LogLevelFilter = .all
+    @State private var source: LogSourceFilter = .all
+    @State private var isPaused = false
 
-    private let sourceFilters: [LogSourceFilter] = [.all, .core, .app]
+    private let sourceFilters: [LogSourceFilter] = [.all, .app, .core]
 
-    private var filteredLogs: [CoreLogEntry] {
-        state.logs.filter { log in
+    private var groupedLogs: [LogGroup] {
+        let orderedLogs = state.logs.enumerated()
+            .map { LogDisplayEntry(log: $0.element, order: $0.offset) }
+            .sorted { left, right in
+                switch (left.log.sortTime, right.log.sortTime) {
+                case let (leftTime?, rightTime?) where leftTime != rightTime:
+                    return leftTime > rightTime
+                case (_?, nil):
+                    return true
+                case (nil, _?):
+                    return false
+                default:
+                    return left.order > right.order
+                }
+            }
+
+        var groups = orderedLogs.reduce(into: [LogGroup]()) { groups, entry in
+            if let lastIndex = groups.indices.last, groups[lastIndex].canAppend(entry) {
+                groups[lastIndex].append(entry)
+            } else {
+                groups.append(LogGroup(entry: entry))
+            }
+        }
+        var occurrenceByKey = [LogGroupKey: Int]()
+        for index in groups.indices.reversed() {
+            let key = groups[index].key
+            let occurrence = occurrenceByKey[key, default: 0]
+            groups[index].setOccurrence(occurrence)
+            occurrenceByKey[key] = occurrence + 1
+        }
+        return groups
+    }
+
+    private var filteredGroups: [LogGroup] {
+        groupedLogs.filter { group in
+            let log = group.representative.log
             let matchesLevel = level == .all || log.normalizedLevel == level.rawValue
             let matchesSource = source == .all || log.source == source
             let matchesSearch = searchText.isEmpty
@@ -686,15 +720,33 @@ private struct LogsContent: View {
     }
 
     var body: some View {
+        let visibleGroups = filteredGroups
+
         PageScaffold(title: "日志") {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     TextField("搜索日志", text: $searchText)
-                        .textFieldStyle(.roundedBorder)
+                        .textFieldStyle(.clashMeowRounded)
 
-                    Button("刷新") {
-                        state.loadLogs(source: source)
+                    LogIconButton(
+                        title: isPaused ? "开始" : "暂停",
+                        systemImage: isPaused ? "play.fill" : "pause.fill"
+                    ) {
+                        isPaused.toggle()
                     }
+
+                    LogIconButton(title: "刷新", systemImage: "arrow.clockwise") {
+                        state.loadLogs(source: .all)
+                    }
+
+                    LogActionButton(title: "复制可见日志") {
+                        let rawText = visibleGroups
+                            .flatMap(\.entries)
+                            .map(\.log.rawText)
+                            .joined(separator: "\n")
+                        writeToPasteboard(rawText)
+                    }
+                    .disabled(visibleGroups.isEmpty)
                 }
 
                 RuleOptionRow {
@@ -721,88 +773,62 @@ private struct LogsContent: View {
                     }
                 }
 
-                RuleOptionRow {
-                    LogActionButton(title: state.isStreamingLogs ? "暂停" : "跟随") {
-                        if state.isStreamingLogs {
-                            state.stopLogStream()
-                        } else {
-                            state.startLogStream(level: level)
-                        }
-                    }
-                    .disabled(!state.core.status.isHealthy)
-
-                    LogActionButton(title: "清空") {
-                        state.clearLogs()
-                    }
-                    .disabled(state.logs.isEmpty)
-
-                    LogActionButton(title: "打开文件") {
-                        state.openLogFile(source: source)
-                    }
-
-                    LogActionButton(title: "在 Finder 中显示") {
-                        state.revealLogFile(source: source)
-                    }
-
-                    if LogPreference.allowsDestructiveFileActions {
-                        LogActionButton(title: "清空文件") {
-                            confirmsClearingFile = true
-                        }
-                    }
-                }
-
-                if filteredLogs.isEmpty {
-                    ContentUnavailableView {
-                        Label(searchText.isEmpty ? "暂无日志" : "无匹配结果", systemImage: "doc.text.magnifyingglass")
-                    } description: {
-                        Text(
-                            searchText.isEmpty
-                                ? (state.core.status.isHealthy ? "点击跟随可查看内核实时日志。" : "启动内核后可查看 core.log 与实时日志。")
-                                : "试试其他搜索词。"
+                if visibleGroups.isEmpty {
+                    VStack(spacing: 8) {
+                        Label(
+                            searchText.isEmpty ? "暂无日志" : "无匹配结果",
+                            systemImage: "doc.text.magnifyingglass"
                         )
-                    } actions: {
-                        Button("刷新") {
-                            state.loadLogs(source: source)
-                        }
+                        .font(.headline)
+                        Text(searchText.isEmpty ? emptyMessage : "试试其他搜索词。")
+                            .foregroundStyle(.secondary)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 320)
+                    .frame(maxWidth: .infinity, minHeight: 220)
                 } else {
                     LazyVStack(spacing: 8) {
-                        ForEach(filteredLogs) { item in
-                            CoreLogRow(log: item)
-                                .contextMenu {
-                                    Button("复制消息") {
-                                        writeToPasteboard(item.message)
-                                    }
-                                    Button("复制可见日志") {
-                                        writeToPasteboard(filteredLogs.map(\.message).joined(separator: "\n"))
-                                    }
-                                }
+                        ForEach(visibleGroups) { group in
+                            CoreLogRow(group: group)
                         }
                     }
+                    .padding(.bottom, 24)
                 }
             }
+            .frame(minHeight: 160)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .task {
-            state.loadLogs(source: source)
-        }
-        .alert("清空日志文件？", isPresented: $confirmsClearingFile) {
-            Button("取消", role: .cancel) {}
-            Button("清空", role: .destructive) {
-                state.clearLogFile(source: source)
+        .task(id: coreLogStreamingTaskID) {
+            guard shouldFollowCoreLogs else {
+                state.stopLogStream()
+                return
             }
-        } message: {
-            Text("这会清空当前来源对应的持久日志文件，重启后也无法恢复。")
-        }
-        .onChange(of: level) { _, newLevel in
-            LogPreference.defaultLevel = newLevel
-            if state.isStreamingLogs {
-                state.startLogStream(level: newLevel)
+            state.loadLogs(source: .all)
+            if state.core.status.isHealthy {
+                state.startLogStream(level: .all)
+            } else {
+                state.stopLogStream()
             }
         }
-        .onChange(of: source) { _, newSource in
-            LogPreference.defaultSource = newSource
-            state.loadLogs(source: newSource)
+        .onDisappear {
+            state.stopLogStream()
+        }
+    }
+
+    private var shouldFollowCoreLogs: Bool {
+        !isPaused && source != .app
+    }
+
+    private var coreLogStreamingTaskID: String {
+        shouldFollowCoreLogs ? (state.core.status.isHealthy ? "running" : "stopped") : "paused"
+    }
+
+    private var emptyMessage: String {
+        switch source {
+        case .all:
+            return "应用和内核运行事件会显示在这里。"
+        case .app:
+            return "应用操作、连接状态和诊断事件会显示在这里。"
+        case .core:
+            return "启动 Mihomo 后可查看内核日志。"
         }
     }
 
@@ -810,6 +836,129 @@ private struct LogsContent: View {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(value, forType: .string)
+    }
+}
+
+private struct LogDisplayEntry: Identifiable {
+    let log: CoreLogEntry
+    let order: Int
+
+    var id: String { log.id }
+}
+
+private struct LogGroupKey: Hashable {
+    let source: LogSourceFilter
+    let level: String
+    let message: String
+}
+
+private struct LogGroupID: Hashable {
+    let key: LogGroupKey
+    let occurrence: Int
+}
+
+private struct LogGroup: Identifiable {
+    private(set) var entries: [LogDisplayEntry]
+    private var occurrence = 0
+
+    init(entry: LogDisplayEntry) {
+        entries = [entry]
+    }
+
+    var id: LogGroupID {
+        LogGroupID(key: key, occurrence: occurrence)
+    }
+
+    var representative: LogDisplayEntry {
+        entries[0]
+    }
+
+    var repeatDescription: String? {
+        guard entries.count > 1 else { return nil }
+        let newestTime = LogTimeSupport.clockString(from: entries.first?.log.time) ?? "-"
+        let oldestTime = LogTimeSupport.clockString(from: entries.last?.log.time) ?? "-"
+        return "重复 \(entries.count) 次 · \(oldestTime)–\(newestTime)"
+    }
+
+    var rawText: String {
+        entries.map(\.log.rawText).joined(separator: "\n")
+    }
+
+    var key: LogGroupKey {
+        let log = representative.log
+        return LogGroupKey(source: log.source, level: log.normalizedLevel, message: log.message)
+    }
+
+    func canAppend(_ entry: LogDisplayEntry) -> Bool {
+        let log = entry.log
+        return key == LogGroupKey(source: log.source, level: log.normalizedLevel, message: log.message)
+    }
+
+    mutating func append(_ entry: LogDisplayEntry) {
+        entries.append(entry)
+    }
+
+    mutating func setOccurrence(_ occurrence: Int) {
+        self.occurrence = occurrence
+    }
+}
+
+private extension LogLevelFilter {
+    var tintColor: Color {
+        switch self {
+        case .all: return ClashMeowPalette.muted
+        case .error: return .red
+        case .warning: return .orange
+        case .info: return .blue
+        case .debug: return ClashMeowPalette.muted
+        }
+    }
+
+    var messageColor: Color {
+        switch self {
+        case .error, .warning:
+            return tintColor
+        case .all, .info:
+            return ClashMeowPalette.ink
+        case .debug:
+            return ClashMeowPalette.muted
+        }
+    }
+}
+
+private extension LogSourceFilter {
+    var tintColor: Color {
+        switch self {
+        case .all: return ClashMeowPalette.muted
+        case .app: return ClashMeowPalette.purple
+        case .core: return .indigo
+        }
+    }
+}
+
+private struct ClashMeowRoundedTextFieldStyle: TextFieldStyle {
+    @Environment(\.isFocused) private var isFocused
+
+    func _body(configuration: TextField<Self._Label>) -> some View {
+        configuration
+            .textFieldStyle(.plain)
+            .tint(ClashMeowPalette.purple)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(ClashMeowPalette.card, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(
+                        isFocused ? ClashMeowPalette.purple.opacity(0.72) : ClashMeowPalette.faintLine,
+                        lineWidth: 1
+                    )
+            }
+    }
+}
+
+private extension TextFieldStyle where Self == ClashMeowRoundedTextFieldStyle {
+    static var clashMeowRounded: ClashMeowRoundedTextFieldStyle {
+        ClashMeowRoundedTextFieldStyle()
     }
 }
 
@@ -831,50 +980,119 @@ private struct LogActionButton: View {
     }
 }
 
-private struct CoreLogRow: View {
-    let log: CoreLogEntry
+private struct LogIconButton: View {
+    let title: String
+    let systemImage: String
+    let action: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Text(log.source.title)
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(ClashMeowPalette.ink.opacity(0.76))
+                .frame(width: 32, height: 32)
+        }
+        .buttonStyle(.plain)
+        .help(title)
+        .accessibilityLabel(title)
+    }
+}
+
+private struct CoreLogRow: View {
+    let group: LogGroup
+
+    private var log: CoreLogEntry {
+        group.representative.log
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Capsule()
+                .fill(level.tintColor)
+                .frame(width: 3, height: 34)
+
+            LogLevelChip(level: level)
+
+            Text(LogTimeSupport.clockString(from: log.time) ?? "-")
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 .foregroundStyle(ClashMeowPalette.muted)
-                .frame(width: 42, alignment: .leading)
-            Text(log.level.uppercased())
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundStyle(levelColor)
-                .frame(width: 62, alignment: .leading)
-            Text(log.message)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                .foregroundStyle(ClashMeowPalette.ink)
-                .textSelection(.enabled)
-            Spacer(minLength: 0)
-            if let time = log.time {
-                Text(time)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(ClashMeowPalette.muted)
+                .frame(width: 66, alignment: .leading)
+                .lineLimit(1)
+
+            LogSourceChip(source: log.source)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(log.message)
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(level.messageColor)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let repeatDescription = group.repeatDescription {
+                    Text(repeatDescription)
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(ClashMeowPalette.muted)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+            .textSelection(.enabled)
         }
-        .padding(12)
-        .surfaceCard()
+        .padding(.horizontal, 12)
+        .surfaceCard(cornerRadius: 8)
         .contextMenu {
             Button("复制消息") {
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
-                pasteboard.setString(log.message, forType: .string)
+                writeToPasteboard(log.message)
+            }
+            Button("复制原始日志") {
+                writeToPasteboard(group.rawText)
             }
         }
     }
 
-    private var levelColor: Color {
-        switch log.normalizedLevel {
-        case "error":
-            ClashMeowPalette.orange
-        case "warning":
-            ClashMeowPalette.orange
-        default:
-            ClashMeowPalette.purple
+    private var level: LogLevelFilter {
+        LogLevelFilter(rawValue: log.normalizedLevel) ?? .info
+    }
+
+    private func writeToPasteboard(_ value: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(value, forType: .string)
+    }
+}
+
+private struct LogLevelChip: View {
+    let level: LogLevelFilter
+
+    var body: some View {
+        Text(level.title)
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(level.tintColor)
+            .lineLimit(1)
+            .frame(width: 42, height: 22)
+            .background(level.tintColor.opacity(0.1), in: Capsule())
+            .overlay {
+                Capsule().stroke(level.tintColor.opacity(0.2), lineWidth: 1)
+            }
+    }
+}
+
+private struct LogSourceChip: View {
+    let source: LogSourceFilter
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(source.tintColor)
+                .frame(width: 5, height: 5)
+            Text(source.title)
         }
+        .font(.system(size: 10, weight: .bold))
+        .foregroundStyle(source.tintColor)
+        .lineLimit(1)
+        .frame(width: 48, height: 22)
+        .background(source.tintColor.opacity(0.08), in: Capsule())
     }
 }
 
@@ -3474,11 +3692,11 @@ private extension View {
         }
     }
 
-    func surfaceCard() -> some View {
+    func surfaceCard(cornerRadius: CGFloat = 16) -> some View {
         self
-            .background(ClashMeowPalette.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(ClashMeowPalette.card, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .stroke(ClashMeowPalette.faintLine, lineWidth: 1)
             )
             .shadow(color: .black.opacity(0.025), radius: 6, x: 0, y: 2)

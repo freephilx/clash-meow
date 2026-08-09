@@ -79,7 +79,46 @@ struct CoreLogSupportTests {
         #expect(logs[0].time == LogTimeSupport.displayString(from: "2026-07-04T09:00:00Z"))
         #expect(logs[0].normalizedLevel == "error")
         #expect(logs[0].message == "[Core] failed to start")
+        #expect(logs[0].rawText == "[2026-07-04T09:00:00Z] [ERROR] [Core] failed to start")
         #expect(logs[0].source == .app)
+    }
+
+    @Test func recentLogsMergesAppAndCoreByTimestamp() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "clashmeow-merged-log-test-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let coreFile = directory.appending(path: "core.log")
+        let appFile = directory.appending(path: "app.log")
+        try #"time="2026-07-04T09:02:00Z" level=info msg="core event""#
+            .write(to: coreFile, atomically: true, encoding: .utf8)
+        try """
+        [2026-07-04T09:01:00Z] [INFO] [App] app event
+        [2026-07-04T09:02:00Z] [INFO] [App] same-second app event
+
+        """
+            .write(to: appFile, atomically: true, encoding: .utf8)
+
+        let logs = CoreLogSupport.recentLogs(coreFile: coreFile, appFile: appFile, source: .all)
+        #expect(logs.map(\.source) == [.app, .app, .core])
+        #expect(logs.map(\.message) == ["[App] app event", "[App] same-second app event", "core event"])
+    }
+
+    @Test func recentLogsPreservesRawCoreTextAndDecodesMessage() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "clashmeow-core-message-test-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let fileURL = directory.appending(path: "core.log")
+        let line = #"time="2026-07-04T09:02:00Z" level=warning msg="retry \"example.com\"""#
+        try line.write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let log = try #require(CoreLogSupport.recentLogs(from: fileURL).first)
+        #expect(log.message == #"retry "example.com""#)
+        #expect(log.rawText == line)
+        #expect(log.sortTime != nil)
     }
 
     @Test func appendWithLimitKeepsRecentContentAndMarker() throws {
@@ -120,5 +159,7 @@ struct CoreLogSupportTests {
         #expect(entry?.normalizedLevel == "info")
         #expect(entry?.message == "[TCP] example.com:443")
         #expect(entry?.time == LogTimeSupport.displayString(from: "2026-06-28T08:00:00Z"))
+        #expect(entry?.rawText == json)
+        #expect(entry?.sortTime != nil)
     }
 }

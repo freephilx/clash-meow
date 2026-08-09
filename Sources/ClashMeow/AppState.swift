@@ -1640,6 +1640,7 @@ final class AppState: ObservableObject {
     }
 
     func stopLogStream() {
+        guard logStreamTask != nil || isStreamingLogs else { return }
         logStreamTask?.cancel()
         logStreamTask = nil
         isStreamingLogs = false

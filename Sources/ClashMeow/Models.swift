@@ -552,20 +552,26 @@ struct CoreLogEntry: Identifiable, Equatable, Sendable {
     let id: String
     let level: String
     let message: String
+    let rawText: String
     let time: String?
+    let sortTime: Int?
     let source: LogSourceFilter
 
     init(
         id: String = UUID().uuidString,
         level: String = "info",
         message: String,
+        rawText: String? = nil,
         time: String? = nil,
+        sortTime: Int? = nil,
         source: LogSourceFilter = .core
     ) {
         self.id = id
         self.level = level
         self.message = message
+        self.rawText = rawText ?? message
         self.time = time
+        self.sortTime = sortTime ?? LogTimeSupport.sortValue(from: time)
         self.source = source
     }
 }

@@ -405,7 +405,7 @@ struct MihomoAPI {
     static func logEntry(from text: String) -> CoreLogEntry? {
         guard let data = text.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return CoreLogEntry(level: "info", message: text)
+            return CoreLogEntry(level: "info", message: text, rawText: text)
         }
         let level = object["type"] as? String
             ?? object["level"] as? String
@@ -417,6 +417,7 @@ struct MihomoAPI {
             id: object["id"] as? String ?? UUID().uuidString,
             level: CoreLogSupport.normalizedLevel(level),
             message: message,
+            rawText: text,
             time: LogTimeSupport.displayString(from: object["time"] as? String)
         )
     }

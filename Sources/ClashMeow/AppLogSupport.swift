@@ -21,6 +21,26 @@ enum LogTimeSupport {
         return makeFormatter(dateFormat: "yyyy-MM-dd HH:mm:ss").string(from: date)
     }
 
+    static func clockString(from timestamp: String?) -> String? {
+        guard let timestamp else { return nil }
+        if let date = date(from: timestamp) ?? displayDate(from: timestamp) {
+            return makeFormatter(dateFormat: "HH:mm:ss").string(from: date)
+        }
+        let trimmed = timestamp.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 8 else { return trimmed.isEmpty ? nil : trimmed }
+        return String(trimmed.suffix(8))
+    }
+
+    static func sortValue(from timestamp: String?) -> Int? {
+        guard let timestamp else { return nil }
+        if let date = date(from: timestamp) ?? displayDate(from: timestamp) {
+            return Int(date.timeIntervalSince1970)
+        }
+        let parts = timestamp.suffix(8).split(separator: ":").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        return parts[0] * 3_600 + parts[1] * 60 + parts[2]
+    }
+
     private static func date(from timestamp: String) -> Date? {
         let isoFormatterWithFractionalSeconds = ISO8601DateFormatter()
         isoFormatterWithFractionalSeconds.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -33,6 +53,10 @@ enum LogTimeSupport {
             return date
         }
         return nil
+    }
+
+    private static func displayDate(from timestamp: String) -> Date? {
+        makeFormatter(dateFormat: "yyyy-MM-dd HH:mm:ss").date(from: timestamp)
     }
 }
 
