@@ -3040,6 +3040,11 @@ private struct NetworkManageCard: View {
         state.currentProfile?.subscriptionUserInfo
     }
 
+    private var isRefreshingCurrentProfile: Bool {
+        guard let profileID = state.currentProfile?.id else { return false }
+        return state.refreshingProfileIDs.contains(profileID)
+    }
+
     private var usageDetailText: String {
         guard let subscription else {
             if state.currentProfile?.kind == .local {
@@ -3121,9 +3126,16 @@ private struct NetworkManageCard: View {
                     .foregroundStyle(DouMeowPalette.muted)
                 Spacer()
                 HStack(alignment: .center, spacing: 10) {
-                    FooterActionButton(title: "刷新", systemImage: "arrow.clockwise") {
-                        Task { await state.refresh() }
+                    FooterActionButton(
+                        title: "刷新",
+                        systemImage: "arrow.clockwise",
+                        isLoading: isRefreshingCurrentProfile,
+                        isDisabled: state.currentProfile?.kind != .remote
+                    ) {
+                        guard let profile = state.currentProfile else { return }
+                        Task { await state.refreshProfile(profile) }
                     }
+                    .help(isRefreshingCurrentProfile ? "正在刷新远程配置" : "刷新远程配置")
 
                     FooterActionButton(title: "配置文件", systemImage: "doc.badge.gearshape") {
                         openProfiles()
@@ -3140,14 +3152,23 @@ private struct NetworkManageCard: View {
 private struct FooterActionButton: View {
     let title: String
     let systemImage: String
+    var isLoading = false
+    var isDisabled = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             HStack(alignment: .center, spacing: 5) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 11, weight: .semibold))
-                    .frame(width: 14, height: 14, alignment: .center)
+                Group {
+                    if isLoading {
+                        ProgressView()
+                            .controlSize(.mini)
+                    } else {
+                        Image(systemName: systemImage)
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                }
+                .frame(width: 14, height: 14, alignment: .center)
                 Text(title)
                     .font(.system(size: 11, weight: .semibold))
                     .frame(height: 14, alignment: .center)
@@ -3157,6 +3178,8 @@ private struct FooterActionButton: View {
         .buttonStyle(.borderless)
         .controlSize(.small)
         .foregroundStyle(DouMeowPalette.muted)
+        .disabled(isDisabled || isLoading)
+        .accessibilityLabel(isLoading ? "\(title)，正在加载" : title)
     }
 }
 
