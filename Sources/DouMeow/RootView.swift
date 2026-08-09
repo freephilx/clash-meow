@@ -3400,10 +3400,12 @@ private struct ProxyNodeCard: View {
                                         .font(.system(size: 13, weight: .bold))
                                         .foregroundStyle(DouMeowPalette.ink)
                                         .lineLimit(1)
-                                    Text(item.detailText.isEmpty ? item.node.endpointText : item.detailText)
-                                        .font(.system(size: 11, weight: .bold))
-                                        .foregroundStyle(item.isSelected ? DouMeowPalette.accent : DouMeowPalette.muted)
-                                        .lineLimit(1)
+                                    if !item.detailText.isEmpty {
+                                        Text(item.detailText)
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundStyle(item.isSelected ? DouMeowPalette.accent : DouMeowPalette.muted)
+                                            .lineLimit(1)
+                                    }
                                 }
                                 Spacer()
                                 Circle()

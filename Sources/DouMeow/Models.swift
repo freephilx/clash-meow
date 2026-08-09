@@ -467,7 +467,7 @@ struct OverviewProxyNode: Equatable, Identifiable {
         if isSelected {
             return ["当前选择", delayText].compactMap { $0 }.joined(separator: " · ")
         }
-        return [delayText, node.endpointText].compactMap { $0 }.joined(separator: " · ")
+        return delayText ?? ""
     }
 
     var delayText: String? {
