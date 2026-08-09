@@ -3092,18 +3092,10 @@ private struct NetworkManageCard: View {
                     .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Text(state.currentProfileName)
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(DouMeowPalette.ink)
-                            .lineLimit(1)
-                        Text("YAML")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(DouMeowPalette.muted)
-                            .padding(.horizontal, 7)
-                            .frame(height: 20)
-                            .background(Color.secondary.opacity(0.08), in: Capsule())
-                    }
+                    Text(state.currentProfileName)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(DouMeowPalette.ink)
+                        .lineLimit(1)
                     Text(usageTitle)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(DouMeowPalette.muted)
