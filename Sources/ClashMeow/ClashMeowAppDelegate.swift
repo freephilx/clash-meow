@@ -24,6 +24,7 @@ final class ClashMeowAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        AppLogSupport.flush()
         statusItemController?.invalidate()
         statusItemController = nil
     }

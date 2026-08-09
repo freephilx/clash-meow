@@ -66,13 +66,6 @@ enum AppPreferenceStore {
         var forwardingMode: String?
         var allowLan: Bool?
         var systemProxyNetworkService: String?
-        var logRetentionDays: Int?
-        var logMaxFileSizeMB: Int?
-        var appLoggingEnabled: Bool?
-        var logDefaultSource: String?
-        var logDefaultLevel: String?
-        var logAutoCleanupEnabled: Bool?
-        var destructiveLogActionsEnabled: Bool?
         var internetLatencyTestURLs: String?
         var internetLatencyDNSDomain: String?
         var internetLatencyTimeoutSeconds: Int?
@@ -246,75 +239,6 @@ enum TunUserPreference {
 
     static func setEnabled(_ enabled: Bool) {
         AppPreferenceStore.setBool(enabled, \.tunUserEnabled)
-    }
-}
-
-enum LogPreference {
-    static var retentionDays: Int {
-        get {
-            min(max(AppPreferenceStore.int(\.logRetentionDays, default: 7), 1), 30)
-        }
-        set {
-            AppPreferenceStore.setInt(min(max(newValue, 1), 30), \.logRetentionDays)
-        }
-    }
-
-    static var maxFileSizeMB: Int {
-        get {
-            min(max(AppPreferenceStore.int(\.logMaxFileSizeMB, default: 10), 1), 100)
-        }
-        set {
-            AppPreferenceStore.setInt(min(max(newValue, 1), 100), \.logMaxFileSizeMB)
-        }
-    }
-
-    static var maxFileSizeBytes: Int {
-        maxFileSizeMB * 1024 * 1024
-    }
-
-    static var isAppLoggingEnabled: Bool {
-        get {
-            AppPreferenceStore.bool(\.appLoggingEnabled, default: true)
-        }
-        set {
-            AppPreferenceStore.setBool(newValue, \.appLoggingEnabled)
-        }
-    }
-
-    static var defaultSource: LogSourceFilter {
-        get {
-            LogSourceFilter(rawValue: AppPreferenceStore.string(\.logDefaultSource) ?? "") ?? .core
-        }
-        set {
-            AppPreferenceStore.setString(newValue.rawValue, \.logDefaultSource)
-        }
-    }
-
-    static var defaultLevel: LogLevelFilter {
-        get {
-            LogLevelFilter(rawValue: AppPreferenceStore.string(\.logDefaultLevel) ?? "") ?? .all
-        }
-        set {
-            AppPreferenceStore.setString(newValue.rawValue, \.logDefaultLevel)
-        }
-    }
-
-    static var isAutoCleanupEnabled: Bool {
-        get {
-            AppPreferenceStore.bool(\.logAutoCleanupEnabled, default: true)
-        }
-        set {
-            AppPreferenceStore.setBool(newValue, \.logAutoCleanupEnabled)
-        }
-    }
-
-    static var allowsDestructiveFileActions: Bool {
-        get {
-            AppPreferenceStore.bool(\.destructiveLogActionsEnabled, default: true)
-        }
-        set {
-            AppPreferenceStore.setBool(newValue, \.destructiveLogActionsEnabled)
-        }
     }
 }
 

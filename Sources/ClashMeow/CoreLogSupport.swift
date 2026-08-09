@@ -1,9 +1,7 @@
+import Combine
 import Foundation
 
 enum CoreLogSupport {
-    private static let truncateMarker = "\n[LOG] File truncated because size limit reached.\n"
-    private static let retainRatio = 0.5
-
     static func inferredLevel(in message: String) -> String {
         let lowercased = message.lowercased()
         if lowercased.contains("error") { return "error" }
@@ -28,95 +26,73 @@ enum CoreLogSupport {
     static func recentLogs(
         from fileURL: URL,
         limit: Int = 500,
-        source: LogSourceFilter = .core
+        source: LogSourceFilter = .core,
+        sessionStartedAt: Date? = nil
     ) -> [CoreLogEntry] {
-        guard FileManager.default.fileExists(atPath: fileURL.path),
-              let content = try? String(contentsOf: fileURL, encoding: .utf8) else {
-            return []
+        let lines = readLastLines(from: fileURL, count: limit)
+        let visibleLines: [String]
+        if source == .core, let sessionStartedAt {
+            visibleLines = lines.filter {
+                isCurrentSessionCoreLine($0, startedAt: sessionStartedAt)
+            }
+        } else {
+            visibleLines = lines
         }
-
-        return content
-            .split(separator: "\n", omittingEmptySubsequences: true)
-            .suffix(limit)
+        return visibleLines
             .enumerated()
             .map { index, line in
-                let message = String(line)
-                return logEntry(from: message, index: index, source: source)
+                logEntry(from: line, index: index, source: source)
             }
     }
 
-    static func recentLogs(
-        coreFile: URL,
-        appFile: URL,
-        source: LogSourceFilter,
-        limit: Int = 500
-    ) -> [CoreLogEntry] {
-        switch source {
-        case .core:
-            return recentLogs(from: coreFile, limit: limit, source: .core)
-        case .app:
-            return recentLogs(from: appFile, limit: limit, source: .app)
-        case .all:
-            return mergedTimeline(
-                recentLogs(from: coreFile, limit: limit, source: .core),
-                recentLogs(from: appFile, limit: limit, source: .app)
-            )
-            .suffix(limit)
-            .map { $0 }
+    static func readLastLines(
+        from fileURL: URL,
+        count: Int,
+        maximumBytes: UInt64 = 1 * 1_024 * 1_024
+    ) -> [String] {
+        guard count > 0,
+              maximumBytes > 0,
+              let handle = try? FileHandle(forReadingFrom: fileURL) else {
+            return []
         }
-    }
+        defer { try? handle.close() }
 
-    static func appendWithLimit(_ text: String, to fileURL: URL, maxBytes: Int = LogPreference.maxFileSizeBytes) throws {
-        try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let data = Data(text.utf8)
-        guard maxBytes > 0 else {
-            try append(data, to: fileURL)
-            return
-        }
-        if data.count >= maxBytes {
-            try data.suffix(maxBytes).write(to: fileURL)
-            return
-        }
+        do {
+            let chunkSize: UInt64 = 64 * 1_024
+            let fileSize = try handle.seekToEnd()
+            var remainingBytes = fileSize
+            var bytesRead: UInt64 = 0
+            var chunks: [Data] = []
+            var newlineCount = 0
 
-        let existingSize = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber)?.intValue ?? 0
-        if existingSize + data.count <= maxBytes {
-            try append(data, to: fileURL)
-            return
-        }
-
-        let retainBudget = Int(Double(maxBytes) * retainRatio)
-        let markerData = Data(truncateMarker.utf8)
-        let keepBytes = max(0, retainBudget - data.count - markerData.count)
-        let tail = tailData(from: fileURL, byteCount: keepBytes)
-        var rewritten = tail + markerData + data
-        if rewritten.count > maxBytes {
-            rewritten = rewritten.suffix(maxBytes)
-        }
-        try rewritten.write(to: fileURL)
-    }
-
-    static func truncate(_ fileURL: URL) throws {
-        try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try Data().write(to: fileURL)
-    }
-
-    static func cleanupOldLogs(in directory: URL, retentionDays: Int = LogPreference.retentionDays) {
-        guard LogPreference.isAutoCleanupEnabled else { return }
-        guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else {
-            return
-        }
-        let cutoff = Date().addingTimeInterval(-Double(max(retentionDays, 1)) * 24 * 60 * 60)
-        let candidates = files.filter { url in
-            let name = url.lastPathComponent
-            guard name.hasSuffix(".log") else { return false }
-            return name == "core.log" || name == "app.log" || name.hasPrefix("core-") || name.hasPrefix("app-")
-        }
-
-        for url in candidates {
-            if let modified = (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate]) as? Date,
-               modified < cutoff {
-                try? FileManager.default.removeItem(at: url)
+            while remainingBytes > 0, newlineCount <= count, bytesRead < maximumBytes {
+                let bytesToRead = min(min(chunkSize, remainingBytes), maximumBytes - bytesRead)
+                remainingBytes -= bytesToRead
+                try handle.seek(toOffset: remainingBytes)
+                guard let chunk = try handle.read(upToCount: Int(bytesToRead)), !chunk.isEmpty else {
+                    break
+                }
+                chunks.append(chunk)
+                bytesRead += UInt64(chunk.count)
+                newlineCount += chunk.reduce(into: 0) { total, byte in
+                    if byte == 0x0A { total += 1 }
+                }
             }
+
+            var tailData = Data()
+            tailData.reserveCapacity(chunks.reduce(0) { $0 + $1.count })
+            for chunk in chunks.reversed() {
+                tailData.append(chunk)
+            }
+
+            var lines = String(decoding: tailData, as: UTF8.self)
+                .split(separator: "\n", omittingEmptySubsequences: true)
+            if remainingBytes > 0, !lines.isEmpty {
+                lines.removeFirst()
+            }
+            return lines.suffix(count).map(String.init)
+        } catch {
+            return []
         }
     }
 
@@ -142,22 +118,6 @@ enum CoreLogSupport {
             time: time,
             source: source
         )
-    }
-
-    private static func mergedTimeline(_ coreLogs: [CoreLogEntry], _ appLogs: [CoreLogEntry]) -> [CoreLogEntry] {
-        (appLogs + coreLogs).enumerated().sorted { left, right in
-            switch (left.element.sortTime, right.element.sortTime) {
-            case let (leftTime?, rightTime?) where leftTime != rightTime:
-                return leftTime < rightTime
-            case (_?, nil):
-                return true
-            case (nil, _?):
-                return false
-            default:
-                return left.offset < right.offset
-            }
-        }
-        .map(\.element)
     }
 
     private static func parseCoreLogLevel(_ line: String) -> String? {
@@ -186,6 +146,15 @@ enum CoreLogSupport {
             return LogTimeSupport.displayString(from: String(line[timeRange]))
         }
         return nil
+    }
+
+    private static func isCurrentSessionCoreLine(_ line: String, startedAt: Date) -> Bool {
+        guard line.hasPrefix("time=\""),
+              let timestamp = value(for: "time", in: line),
+              let date = LogTimeSupport.dateValue(from: timestamp) else {
+            return false
+        }
+        return date >= startedAt
     }
 
     private static func value(for key: String, in line: String) -> String? {
@@ -224,32 +193,31 @@ enum CoreLogSupport {
         )
     }
 
-    private static func append(_ data: Data, to fileURL: URL) throws {
-        if FileManager.default.fileExists(atPath: fileURL.path) {
-            let handle = try FileHandle(forWritingTo: fileURL)
-            defer { try? handle.close() }
-            try handle.seekToEnd()
-            try handle.write(contentsOf: data)
-        } else {
-            try data.write(to: fileURL)
-        }
-    }
-
-    private static func tailData(from fileURL: URL, byteCount: Int) -> Data {
-        guard byteCount > 0,
-              let handle = try? FileHandle(forReadingFrom: fileURL) else {
-            return Data()
-        }
-        defer { try? handle.close() }
-        let size = (try? handle.seekToEnd()) ?? 0
-        let offset = size > UInt64(byteCount) ? size - UInt64(byteCount) : 0
-        try? handle.seek(toOffset: offset)
-        return (try? handle.readToEnd()) ?? Data()
-    }
 }
 
 extension CoreLogEntry {
     var normalizedLevel: String {
         CoreLogSupport.normalizedLevel(level)
     }
+}
+
+@MainActor
+final class MihomoLogStore: ObservableObject {
+    @Published private(set) var entries: [CoreLogEntry] = []
+
+    func replaceEntries(with entries: [CoreLogEntry]) {
+        guard entries != self.entries else { return }
+        self.entries = entries
+    }
+
+    func appendEntries(_ newEntries: [CoreLogEntry], limit: Int) {
+        guard !newEntries.isEmpty else { return }
+        var updatedEntries = entries
+        updatedEntries.append(contentsOf: newEntries)
+        if updatedEntries.count > limit {
+            updatedEntries.removeFirst(updatedEntries.count - limit)
+        }
+        entries = updatedEntries
+    }
+
 }

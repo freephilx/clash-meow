@@ -35,8 +35,6 @@ struct AppPreferenceStoreTests {
                 settings.selectedProfileID = "remote-profile"
             }
             CoreAutoStartManager.setEnabled(false)
-            LogPreference.retentionDays = 12
-            LogPreference.defaultLevel = .warning
             InternetLatencyPreference.testURLsText = "https://example.com/generate_204"
             InternetLatencyPreference.dnsDomain = "example.com"
             InternetLatencyPreference.timeoutSeconds = 8
@@ -50,8 +48,6 @@ struct AppPreferenceStoreTests {
             #expect(preferences.tunUserEnabled == true)
             #expect(preferences.mihomoSettings?.selectedProfileID == "remote-profile")
             #expect(preferences.coreEnabled == false)
-            #expect(preferences.logRetentionDays == 12)
-            #expect(preferences.logDefaultLevel == LogLevelFilter.warning.rawValue)
             #expect(preferences.internetLatencyTestURLs == "https://example.com/generate_204")
             #expect(preferences.internetLatencyDNSDomain == "example.com")
             #expect(preferences.internetLatencyTimeoutSeconds == 8)

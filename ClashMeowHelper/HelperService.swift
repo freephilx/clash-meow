@@ -136,11 +136,14 @@ final class HelperService: NSObject, HelperXPCProtocol, NSXPCListenerDelegate {
                 withIntermediateDirectories: true
             )
             if !FileManager.default.fileExists(atPath: logURL.path) {
-                FileManager.default.createFile(atPath: logURL.path, contents: nil)
+                FileManager.default.createFile(
+                    atPath: logURL.path,
+                    contents: nil,
+                    attributes: [.posixPermissions: 0o600]
+                )
             }
             let handle = try FileHandle(forWritingTo: logURL)
             try handle.seekToEnd()
-            appendSessionHeader(executablePath: executablePath, configDirectory: configDirectory, configFile: configFile, handle: handle)
             coreLogFileHandle = handle
             process.standardOutput = handle
             process.standardError = handle
@@ -195,7 +198,7 @@ final class HelperService: NSObject, HelperXPCProtocol, NSXPCListenerDelegate {
 
         let expectedLogFile = normalizedPath(
             URL(fileURLWithPath: configDirectory)
-                .appendingPathComponent("core.log")
+                .appendingPathComponent("mihomo.log")
                 .path
         )
         guard logFile == expectedLogFile else {
@@ -261,17 +264,6 @@ final class HelperService: NSObject, HelperXPCProtocol, NSXPCListenerDelegate {
         let deadline = Date().addingTimeInterval(timeout)
         while process.isRunning, Date() < deadline {
             RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
-        }
-    }
-
-    private func appendSessionHeader(executablePath: String, configDirectory: String, configFile: String, handle: FileHandle) {
-        let formatter = ISO8601DateFormatter()
-        formatter.timeZone = .current
-        formatter.formatOptions = [.withInternetDateTime]
-        let timestamp = formatter.string(from: Date())
-        let header = "[\(timestamp)] privileged starting \(executablePath) -d \(configDirectory) -f \(configFile)\n"
-        if let data = header.data(using: .utf8) {
-            try? handle.write(contentsOf: data)
         }
     }
 

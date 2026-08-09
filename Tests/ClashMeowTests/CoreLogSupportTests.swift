@@ -37,7 +37,7 @@ struct CoreLogSupportTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let fileURL = directory.appending(path: "core.log")
+        let fileURL = directory.appending(path: "mihomo.log")
         try "info line one\nwarning line two\nerror line three\n".write(to: fileURL, atomically: true, encoding: .utf8)
 
         let logs = CoreLogSupport.recentLogs(from: fileURL, limit: 2)
@@ -55,7 +55,7 @@ struct CoreLogSupportTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let fileURL = directory.appending(path: "core.log")
+        let fileURL = directory.appending(path: "mihomo.log")
         try #"time="2026-07-04T09:38:39+08:00" level=warning msg="[TCP] connect error: timeout""#
             .write(to: fileURL, atomically: true, encoding: .utf8)
 
@@ -83,35 +83,13 @@ struct CoreLogSupportTests {
         #expect(logs[0].source == .app)
     }
 
-    @Test func recentLogsMergesAppAndCoreByTimestamp() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appending(path: "clashmeow-merged-log-test-\(UUID().uuidString)", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-
-        let coreFile = directory.appending(path: "core.log")
-        let appFile = directory.appending(path: "app.log")
-        try #"time="2026-07-04T09:02:00Z" level=info msg="core event""#
-            .write(to: coreFile, atomically: true, encoding: .utf8)
-        try """
-        [2026-07-04T09:01:00Z] [INFO] [App] app event
-        [2026-07-04T09:02:00Z] [INFO] [App] same-second app event
-
-        """
-            .write(to: appFile, atomically: true, encoding: .utf8)
-
-        let logs = CoreLogSupport.recentLogs(coreFile: coreFile, appFile: appFile, source: .all)
-        #expect(logs.map(\.source) == [.app, .app, .core])
-        #expect(logs.map(\.message) == ["[App] app event", "[App] same-second app event", "core event"])
-    }
-
     @Test func recentLogsPreservesRawCoreTextAndDecodesMessage() throws {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "clashmeow-core-message-test-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let fileURL = directory.appending(path: "core.log")
+        let fileURL = directory.appending(path: "mihomo.log")
         let line = #"time="2026-07-04T09:02:00Z" level=warning msg="retry \"example.com\"""#
         try line.write(to: fileURL, atomically: true, encoding: .utf8)
 
@@ -121,33 +99,99 @@ struct CoreLogSupportTests {
         #expect(log.sortTime != nil)
     }
 
-    @Test func appendWithLimitKeepsRecentContentAndMarker() throws {
+    @Test func recentLogsOnlyIncludesCurrentMihomoSession() throws {
         let directory = FileManager.default.temporaryDirectory
-            .appending(path: "clashmeow-capped-log-test-\(UUID().uuidString)", directoryHint: .isDirectory)
+            .appending(path: "clashmeow-session-log-test-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let fileURL = directory.appending(path: "core.log")
-        try String(repeating: "old-", count: 30).write(to: fileURL, atomically: true, encoding: .utf8)
-        try CoreLogSupport.appendWithLimit("new-important-line\n", to: fileURL, maxBytes: 80)
+        let fileURL = directory.appending(path: "mihomo.log")
+        try """
+        time="2026-07-04T09:00:00Z" level=info msg="previous session"
+        malformed line without timestamp
+        time="2026-07-04T09:02:00Z" level=info msg="current session"
 
-        let content = try String(contentsOf: fileURL, encoding: .utf8)
-        #expect(content.contains("File truncated because size limit reached"))
-        #expect(content.contains("new-important-line"))
-        #expect((try FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber)?.intValue ?? 0 <= 80)
+        """.write(to: fileURL, atomically: true, encoding: .utf8)
+        let startedAt = try #require(ISO8601DateFormatter().date(from: "2026-07-04T09:01:00Z"))
+
+        let logs = CoreLogSupport.recentLogs(
+            from: fileURL,
+            source: .core,
+            sessionStartedAt: startedAt
+        )
+        #expect(logs.map(\.message) == ["current session"])
     }
 
-    @Test func truncateClearsLogFile() throws {
+    @Test func tailReaderDropsPartialLeadingLine() throws {
         let directory = FileManager.default.temporaryDirectory
-            .appending(path: "clashmeow-truncate-log-test-\(UUID().uuidString)", directoryHint: .isDirectory)
+            .appending(path: "clashmeow-tail-log-test-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let fileURL = directory.appending(path: "core.log")
-        try "content".write(to: fileURL, atomically: true, encoding: .utf8)
-        try CoreLogSupport.truncate(fileURL)
-        let content = try String(contentsOf: fileURL, encoding: .utf8)
-        #expect(content.isEmpty)
+        let fileURL = directory.appending(path: "mihomo.log")
+        try "discarded-prefix\nkeep-one\nkeep-two\n"
+            .write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let lines = CoreLogSupport.readLastLines(from: fileURL, count: 10, maximumBytes: 11)
+        #expect(lines == ["keep-two"])
+    }
+
+    @Test func applicationLogWriterRotatesAndLimitsLines() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "clashmeow-app-writer-test-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let fileURL = directory.appending(path: "app.log")
+        try "previous session\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        let writer = ApplicationLogWriter()
+        writer.prepare(logsDirectory: directory)
+        writer.append(String(repeating: "x", count: 70_000) + "\n", logsDirectory: directory)
+        writer.flush()
+
+        let archives = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.hasPrefix("app-") }
+        #expect(archives.count == 1)
+        #expect(try String(contentsOf: archives[0], encoding: .utf8) == "previous session\n")
+
+        let data = try Data(contentsOf: fileURL)
+        #expect(data.count == ApplicationLogWriter.maximumApplicationLogLineBytes)
+        #expect(String(decoding: data, as: UTF8.self).hasSuffix("... [log line truncated]\n"))
+        let permissions = try #require(
+            FileManager.default.attributesOfItem(atPath: fileURL.path)[.posixPermissions] as? NSNumber
+        )
+        #expect(permissions.intValue & 0o777 == 0o600)
+    }
+
+    @Test func applicationLogWriterKeepsNewestNumericArchiveSuffixes() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "clashmeow-app-archive-test-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        for suffix in 1...11 {
+            let suffixText = suffix == 1 ? "" : "-\(suffix)"
+            let url = directory.appending(path: "app-20260704-090000-000\(suffixText).log")
+            try "archive \(suffix)".write(to: url, atomically: true, encoding: .utf8)
+        }
+
+        let writer = ApplicationLogWriter()
+        writer.prepare(logsDirectory: directory)
+        let names = try Set(
+            FileManager.default.contentsOfDirectory(atPath: directory.path)
+        )
+        #expect(names.count == ApplicationLogWriter.maximumRuntimeLogCount - 1)
+        #expect(names.contains("app-20260704-090000-000-10.log"))
+        #expect(names.contains("app-20260704-090000-000-11.log"))
+        #expect(!names.contains("app-20260704-090000-000.log"))
+        #expect(!names.contains("app-20260704-090000-000-2.log"))
+    }
+
+    @Test @MainActor func mihomoLogStoreCapsPublishedEntries() {
+        let store = MihomoLogStore()
+        let entries = (0..<4).map { CoreLogEntry(id: "\($0)", message: "entry \($0)") }
+        store.appendEntries(entries, limit: 3)
+        #expect(store.entries.map(\.id) == ["1", "2", "3"])
     }
 
     @Test func logEntryParsesMihomoWebSocketPayload() {
@@ -161,5 +205,10 @@ struct CoreLogSupportTests {
         #expect(entry?.time == LogTimeSupport.displayString(from: "2026-06-28T08:00:00Z"))
         #expect(entry?.rawText == json)
         #expect(entry?.sortTime != nil)
+    }
+
+    @Test func oversizedMihomoWebSocketPayloadIsRejected() {
+        let payload = String(repeating: "x", count: MihomoAPI.maximumLogEntryBytes + 1)
+        #expect(MihomoAPI.logEntry(from: payload) == nil)
     }
 }

@@ -1,6 +1,5 @@
-import AppKit
-import Foundation
 import Combine
+import Foundation
 
 struct AppToast: Identifiable, Equatable {
     let id = UUID()
@@ -26,6 +25,9 @@ private enum TunUpdateError: LocalizedError {
 
 @MainActor
 final class AppState: ObservableObject {
+    static let maximumLogEntryCount = 500
+    static let mihomoLogPublishIntervalNanoseconds: UInt64 = 100_000_000
+
     @Published var core = MihomoCoreManager()
     @Published var config: MihomoConfig?
     @Published var version: MihomoVersion?
@@ -35,8 +37,10 @@ final class AppState: ObservableObject {
     @Published var proxyGroups: [ProxyGroupItem] = []
     @Published var rules: [RuleItem] = []
     @Published var ruleProviders: [RuleProviderItem] = []
-    @Published var logs: [CoreLogEntry] = []
+    @Published private(set) var appLogs: [CoreLogEntry] = []
     @Published var isStreamingLogs = false
+    let mihomoLogStore = MihomoLogStore()
+    let logSessionStartedAt = Date()
     @Published private(set) var updatingRuleProviderNames = Set<String>()
     @Published private(set) var testingDelayGroupID: String?
     @Published var activeProfileConfig: MihomoConfig?
@@ -65,6 +69,9 @@ final class AppState: ObservableObject {
     private let systemProxyController = SystemProxyController()
     private var pollTask: Task<Void, Never>?
     private var logStreamTask: Task<Void, Never>?
+    private var logStreamFlushTask: Task<Void, Never>?
+    private var pendingMihomoLogEntries: [CoreLogEntry] = []
+    private var logStreamGeneration: UInt64 = 0
     private var modeUpdateTask: Task<Void, Never>?
     private var allowLanUpdateTask: Task<Void, Never>?
     private var systemProxyUpdateTask: Task<Void, Never>?
@@ -86,6 +93,10 @@ final class AppState: ObservableObject {
 
     var isTestingDelay: Bool {
         testingDelayGroupID != nil
+    }
+
+    var logs: [CoreLogEntry] {
+        appLogs + mihomoLogStore.entries
     }
 
     func isTestingDelay(groupID: String) -> Bool {
@@ -117,6 +128,23 @@ final class AppState: ObservableObject {
             .init(id: "proxy", title: "系统代理", subtitle: "将系统网络设置指向本机混合端口。", systemImage: "globe", isOn: savedSystemProxy),
             .init(id: "tun", title: "TUN", subtitle: "系统栈、自动路由与虚拟网卡。", systemImage: "antenna.radiowaves.left.and.right", isOn: savedTun)
         ]
+
+        AppLogSupport.prepare(logsDirectory: core.logsDirectory)
+
+        NotificationCenter.default.publisher(for: .clashMeowApplicationLogDidAppend)
+            .compactMap { $0.userInfo?[ApplicationLogWriter.entryUserInfoKey] as? CoreLogEntry }
+            .sink { [weak self] entry in
+                Task { @MainActor [weak self] in
+                    self?.appendApplicationLog(entry)
+                }
+            }
+            .store(in: &cancellables)
+
+        mihomoLogStore.objectWillChange
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
 
         AppLogSupport.info("AppState 初始化完成", module: "App", logsDirectory: core.logsDirectory)
 
@@ -1604,47 +1632,109 @@ final class AppState: ObservableObject {
     }
 
     func loadLogs() {
-        loadLogs(source: LogPreference.defaultSource)
+        loadLogs(source: .all)
     }
 
     func loadLogs(source: LogSourceFilter) {
-        logs = CoreLogSupport.recentLogs(
-            coreFile: core.coreLogFile,
-            appFile: core.appLogFile,
-            source: source,
-            limit: 500
-        )
+        guard source != .app else { return }
+        refreshCoreLogs()
     }
 
     func startLogStream(level: LogLevelFilter) {
-        guard core.status.isHealthy else { return }
-        logStreamTask?.cancel()
+        guard core.status.isHealthy, logStreamTask == nil else { return }
+        logStreamGeneration &+= 1
+        let generation = logStreamGeneration
         isStreamingLogs = true
         let selectedLevel = level.controllerValue ?? displayedConfig?.logLevel
-        AppLogSupport.info(
-            "开始跟随 mihomo 日志，level=\(selectedLevel ?? "config")",
-            module: "Logs",
-            logsDirectory: core.logsDirectory
-        )
         logStreamTask = Task { [weak self] in
-            guard let self else { return }
-            do {
-                for try await log in api.logStream(level: selectedLevel) {
-                    appendLog(log)
-                }
-            } catch {
-                isStreamingLogs = false
-                AppLogSupport.error("mihomo 日志流断开: \(error.localizedDescription)", module: "Logs", logsDirectory: core.logsDirectory)
-            }
+            await self?.runMihomoLogStream(generation: generation, level: selectedLevel)
         }
     }
 
     func stopLogStream() {
         guard logStreamTask != nil || isStreamingLogs else { return }
+        logStreamGeneration &+= 1
         logStreamTask?.cancel()
         logStreamTask = nil
+        logStreamFlushTask?.cancel()
+        logStreamFlushTask = nil
+        flushPendingMihomoLogEntries()
         isStreamingLogs = false
-        AppLogSupport.info("停止跟随 mihomo 日志", module: "Logs", logsDirectory: core.logsDirectory)
+    }
+
+    private func refreshCoreLogs() {
+        let entries = CoreLogSupport.recentLogs(
+            from: core.coreLogFile,
+            limit: Self.maximumLogEntryCount,
+            source: .core,
+            sessionStartedAt: logSessionStartedAt
+        )
+        mihomoLogStore.replaceEntries(with: entries)
+    }
+
+    private func runMihomoLogStream(generation: UInt64, level: String?) async {
+        var retryDelayNanoseconds: UInt64 = 1_000_000_000
+
+        while !Task.isCancelled,
+              generation == logStreamGeneration,
+              core.status.isHealthy {
+            var receivedEntry = false
+            do {
+                for try await entry in api.logStream(level: level) {
+                    guard !Task.isCancelled, generation == logStreamGeneration else { break }
+                    receivedEntry = true
+                    enqueueMihomoLogEntry(entry)
+                }
+            } catch {
+                // Stopping the core or leaving the log page naturally closes the local socket.
+            }
+
+            guard generation == logStreamGeneration else { break }
+            flushPendingMihomoLogEntries()
+            guard !Task.isCancelled, core.status.isHealthy else { break }
+            refreshCoreLogs()
+            if receivedEntry {
+                retryDelayNanoseconds = 1_000_000_000
+            }
+            do {
+                try await Task.sleep(nanoseconds: retryDelayNanoseconds)
+            } catch {
+                break
+            }
+            retryDelayNanoseconds = min(retryDelayNanoseconds * 2, 8_000_000_000)
+        }
+
+        guard generation == logStreamGeneration else { return }
+        logStreamTask = nil
+        isStreamingLogs = false
+        flushPendingMihomoLogEntries()
+    }
+
+    private func enqueueMihomoLogEntry(_ entry: CoreLogEntry) {
+        pendingMihomoLogEntries.append(entry)
+        if pendingMihomoLogEntries.count > Self.maximumLogEntryCount {
+            pendingMihomoLogEntries.removeFirst(
+                pendingMihomoLogEntries.count - Self.maximumLogEntryCount
+            )
+        }
+        guard logStreamFlushTask == nil else { return }
+        logStreamFlushTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: Self.mihomoLogPublishIntervalNanoseconds)
+            } catch {
+                return
+            }
+            guard let self else { return }
+            logStreamFlushTask = nil
+            flushPendingMihomoLogEntries()
+        }
+    }
+
+    private func flushPendingMihomoLogEntries() {
+        guard !pendingMihomoLogEntries.isEmpty else { return }
+        let entries = pendingMihomoLogEntries
+        pendingMihomoLogEntries.removeAll(keepingCapacity: true)
+        mihomoLogStore.appendEntries(entries, limit: Self.maximumLogEntryCount)
     }
 
     func stopTrafficStream() {
@@ -1691,49 +1781,6 @@ final class AppState: ObservableObject {
         let capacity = 60
         if trafficHistory.count > capacity {
             trafficHistory.removeFirst(trafficHistory.count - capacity)
-        }
-    }
-
-    func clearLogs() {
-        logs = []
-    }
-
-    func logFileURL(for source: LogSourceFilter) -> URL {
-        switch source {
-        case .core:
-            return core.coreLogFile
-        case .app:
-            return core.appLogFile
-        case .all:
-            return core.runtimeDirectory
-        }
-    }
-
-    func openLogFile(source: LogSourceFilter) {
-        let url = logFileURL(for: source)
-        NSWorkspace.shared.open(url)
-        AppLogSupport.info("打开日志文件: \(url.path)", module: "Logs", logsDirectory: core.logsDirectory)
-    }
-
-    func revealLogFile(source: LogSourceFilter) {
-        let url = logFileURL(for: source)
-        NSWorkspace.shared.activateFileViewerSelecting([url])
-        AppLogSupport.info("在 Finder 中显示日志文件: \(url.path)", module: "Logs", logsDirectory: core.logsDirectory)
-    }
-
-    func clearLogFile(source: LogSourceFilter) {
-        switch source {
-        case .core:
-            try? CoreLogSupport.truncate(core.coreLogFile)
-        case .app:
-            try? CoreLogSupport.truncate(core.appLogFile)
-        case .all:
-            try? CoreLogSupport.truncate(core.coreLogFile)
-            try? CoreLogSupport.truncate(core.appLogFile)
-        }
-        logs = []
-        if source == .core {
-            AppLogSupport.warning("已清空日志文件 source=\(source.rawValue)", module: "Logs", logsDirectory: core.logsDirectory)
         }
     }
 
@@ -2333,10 +2380,10 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func appendLog(_ log: CoreLogEntry) {
-        logs.append(log)
-        if logs.count > 500 {
-            logs.removeFirst(logs.count - 500)
+    private func appendApplicationLog(_ entry: CoreLogEntry) {
+        appLogs.append(entry)
+        if appLogs.count > Self.maximumLogEntryCount {
+            appLogs.removeFirst(appLogs.count - Self.maximumLogEntryCount)
         }
     }
 }

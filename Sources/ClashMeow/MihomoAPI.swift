@@ -1,6 +1,7 @@
 import Foundation
 
 struct MihomoAPI {
+    static let maximumLogEntryBytes = 1 * 1_024 * 1_024
     var baseURL = URL(string: "http://127.0.0.1:9090")!
     var secret = ""
     var urlSession: URLSession = MihomoAPI.makeDefaultSession()
@@ -224,15 +225,39 @@ struct MihomoAPI {
         var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
         components.scheme = "ws"
         components.path = "/logs"
-        if let level, !level.isEmpty {
-            components.queryItems = [URLQueryItem(name: "level", value: level)]
-        }
+        components.queryItems = [
+            URLQueryItem(name: "level", value: level?.isEmpty == false ? level : "info"),
+            URLQueryItem(name: "format", value: "structured")
+        ]
         var request = URLRequest(url: components.url!)
         if !secret.isEmpty {
             request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
         }
 
-        return streamWebSocket(request: request, parser: { Self.logEntry(from: $0) })
+        return singleWebSocketStream(request: request, parser: { Self.logEntry(from: $0) })
+    }
+
+    private func singleWebSocketStream<T: Sendable>(
+        request: URLRequest,
+        parser: @escaping @Sendable (String) -> T?
+    ) -> AsyncThrowingStream<T, Error> {
+        let socket = urlSession.webSocketTask(with: request)
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                socket.resume()
+                _ = await Self.consumeWebSocket(
+                    socket,
+                    parser: parser,
+                    yield: { continuation.yield($0) }
+                )
+                socket.cancel(with: .goingAway, reason: nil)
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in
+                task.cancel()
+                socket.cancel(with: .goingAway, reason: nil)
+            }
+        }
     }
 
     private func streamWebSocket<T: Sendable>(
@@ -403,6 +428,7 @@ struct MihomoAPI {
     }
 
     static func logEntry(from text: String) -> CoreLogEntry? {
+        guard text.utf8.count <= maximumLogEntryBytes else { return nil }
         guard let data = text.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return CoreLogEntry(level: "info", message: text, rawText: text)

@@ -27,7 +27,7 @@ final class MihomoCoreManager: ObservableObject {
         self.configDirectory = AppPersistencePaths.mihomoRuntimeDirectory
         self.configFile = configDirectory.appending(path: "config.yaml")
         self.logsDirectory = AppPersistencePaths.logsDirectory
-        self.coreLogFile = configDirectory.appending(path: "core.log")
+        self.coreLogFile = configDirectory.appending(path: "mihomo.log")
         self.appLogFile = logsDirectory.appending(path: "app.log")
     }
 
@@ -36,8 +36,6 @@ final class MihomoCoreManager: ObservableObject {
             try FileManager.default.createDirectory(at: configDirectory, withIntermediateDirectories: true)
             try FileManager.default.createDirectory(at: logsDirectory, withIntermediateDirectories: true)
             try copyBundledGeoDataIfNeeded()
-            CoreLogSupport.cleanupOldLogs(in: logsDirectory)
-            CoreLogSupport.cleanupOldLogs(in: configDirectory)
             if !FileManager.default.fileExists(atPath: configFile.path) {
                 let sample = AppResources.url(forResource: "sampleConfig", withExtension: "yaml")
                 if let sample {
@@ -90,15 +88,11 @@ final class MihomoCoreManager: ObservableObject {
         do {
             let logHandle = try openLogFileHandle()
             logFileHandle = logHandle
-            appendSessionHeader(
-                launchPath: launchPath,
-                handle: logHandle
-            )
             task.standardOutput = logHandle
             task.standardError = logHandle
         } catch {
             status = .failed(error.localizedDescription)
-            AppLogSupport.error("打开 core.log 失败: \(error.localizedDescription)", module: "Core", logsDirectory: logsDirectory)
+            AppLogSupport.error("打开 mihomo.log 失败: \(error.localizedDescription)", module: "Core", logsDirectory: logsDirectory)
             return
         }
 
@@ -192,20 +186,15 @@ final class MihomoCoreManager: ObservableObject {
     private func openLogFileHandle() throws -> FileHandle {
         try FileManager.default.createDirectory(at: logsDirectory, withIntermediateDirectories: true)
         if !FileManager.default.fileExists(atPath: coreLogFile.path) {
-            FileManager.default.createFile(atPath: coreLogFile.path, contents: nil)
+            FileManager.default.createFile(
+                atPath: coreLogFile.path,
+                contents: nil,
+                attributes: [.posixPermissions: 0o600]
+            )
         }
-        try CoreLogSupport.appendWithLimit("", to: coreLogFile)
         let handle = try FileHandle(forWritingTo: coreLogFile)
         try handle.seekToEnd()
         return handle
-    }
-
-    private func appendSessionHeader(launchPath: String, handle: FileHandle) {
-        let timestamp = LogTimeSupport.string()
-        let header = "[\(timestamp)] starting \(launchPath) -d \(configDirectory.path) -f \(configFile.path)\n"
-        if let data = header.data(using: .utf8) {
-            try? handle.write(contentsOf: data)
-        }
     }
 
     private func closeLogFileHandle() {

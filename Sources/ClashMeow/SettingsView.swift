@@ -6,13 +6,6 @@ struct SettingsView: View {
     @State private var coreEnabled = CoreAutoStartManager.isEnabled
     @State private var systemProxyEnabled = SystemProxyPreference.isEnabled
     @State private var tunEnabled = TunPreference.isEnabled
-    @State private var logRetentionDays = LogPreference.retentionDays
-    @State private var logMaxFileSizeMB = LogPreference.maxFileSizeMB
-    @State private var appLoggingEnabled = LogPreference.isAppLoggingEnabled
-    @State private var logDefaultSource = LogPreference.defaultSource
-    @State private var logDefaultLevel = LogPreference.defaultLevel
-    @State private var logAutoCleanupEnabled = LogPreference.isAutoCleanupEnabled
-    @State private var destructiveLogActionsEnabled = LogPreference.allowsDestructiveFileActions
     @State private var internetLatencyTestURLs = InternetLatencyPreference.testURLsText
     @State private var internetLatencyDNSDomain = InternetLatencyPreference.dnsDomain
     @State private var internetLatencyTimeoutSeconds = InternetLatencyPreference.timeoutSeconds
@@ -65,29 +58,6 @@ struct SettingsView: View {
                 Text("开启后，登录 macOS 时会自动启动 \(AppInfo.displayName)。")
             }
 
-            Section {
-                Stepper("日志保留 \(logRetentionDays) 天", value: logRetentionDaysBinding, in: 1...30)
-                Stepper("单文件上限 \(logMaxFileSizeMB) MB", value: logMaxFileSizeBinding, in: 1...100)
-                Toggle("记录应用日志", isOn: appLoggingBinding)
-                Picker("默认来源", selection: logDefaultSourceBinding) {
-                    ForEach(LogSourceFilter.allCases) { source in
-                        Text(source.title).tag(source)
-                    }
-                }
-                Picker("默认级别", selection: logDefaultLevelBinding) {
-                    Text("跟随配置").tag(LogLevelFilter.all)
-                    Text("错误").tag(LogLevelFilter.error)
-                    Text("警告").tag(LogLevelFilter.warning)
-                    Text("信息").tag(LogLevelFilter.info)
-                    Text("调试").tag(LogLevelFilter.debug)
-                }
-                Toggle("启动时清理过期日志", isOn: logAutoCleanupBinding)
-                Toggle("显示清空日志文件入口", isOn: destructiveLogActionsBinding)
-            } header: {
-                Text("日志")
-            } footer: {
-                Text("日志保存在 ~/.config/clash-meow/runtime。重启后仍保留；超过保留天数或文件大小上限的旧内容会被清理。")
-            }
         }
         .formStyle(.grouped)
         .padding(20)
@@ -96,13 +66,6 @@ struct SettingsView: View {
             coreEnabled = CoreAutoStartManager.isEnabled
             systemProxyEnabled = SystemProxyPreference.isEnabled
             tunEnabled = TunPreference.isEnabled
-            logRetentionDays = LogPreference.retentionDays
-            logMaxFileSizeMB = LogPreference.maxFileSizeMB
-            appLoggingEnabled = LogPreference.isAppLoggingEnabled
-            logDefaultSource = LogPreference.defaultSource
-            logDefaultLevel = LogPreference.defaultLevel
-            logAutoCleanupEnabled = LogPreference.isAutoCleanupEnabled
-            destructiveLogActionsEnabled = LogPreference.allowsDestructiveFileActions
             internetLatencyTestURLs = InternetLatencyPreference.testURLsText
             internetLatencyDNSDomain = InternetLatencyPreference.dnsDomain
             internetLatencyTimeoutSeconds = InternetLatencyPreference.timeoutSeconds
@@ -155,69 +118,6 @@ struct SettingsView: View {
                 launchAtLogin = LaunchAtLoginManager.isEnabled
                 launchAtLoginErrorMessage = "无法更新登录项：\(error.localizedDescription)"
             }
-        }
-    }
-
-    private var logRetentionDaysBinding: Binding<Int> {
-        Binding {
-            logRetentionDays
-        } set: { value in
-            logRetentionDays = value
-            LogPreference.retentionDays = value
-        }
-    }
-
-    private var logMaxFileSizeBinding: Binding<Int> {
-        Binding {
-            logMaxFileSizeMB
-        } set: { value in
-            logMaxFileSizeMB = value
-            LogPreference.maxFileSizeMB = value
-        }
-    }
-
-    private var appLoggingBinding: Binding<Bool> {
-        Binding {
-            appLoggingEnabled
-        } set: { value in
-            appLoggingEnabled = value
-            LogPreference.isAppLoggingEnabled = value
-        }
-    }
-
-    private var logDefaultSourceBinding: Binding<LogSourceFilter> {
-        Binding {
-            logDefaultSource
-        } set: { value in
-            logDefaultSource = value
-            LogPreference.defaultSource = value
-        }
-    }
-
-    private var logDefaultLevelBinding: Binding<LogLevelFilter> {
-        Binding {
-            logDefaultLevel
-        } set: { value in
-            logDefaultLevel = value
-            LogPreference.defaultLevel = value
-        }
-    }
-
-    private var logAutoCleanupBinding: Binding<Bool> {
-        Binding {
-            logAutoCleanupEnabled
-        } set: { value in
-            logAutoCleanupEnabled = value
-            LogPreference.isAutoCleanupEnabled = value
-        }
-    }
-
-    private var destructiveLogActionsBinding: Binding<Bool> {
-        Binding {
-            destructiveLogActionsEnabled
-        } set: { value in
-            destructiveLogActionsEnabled = value
-            LogPreference.allowsDestructiveFileActions = value
         }
     }
 
