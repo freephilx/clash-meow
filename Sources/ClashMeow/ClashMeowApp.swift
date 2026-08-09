@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct ClashMeowApp: App {
+    @Environment(\.openWindow) private var openWindow
     @StateObject private var appState = AppState()
     @NSApplicationDelegateAdaptor(ClashMeowAppDelegate.self) private var appDelegate
 
@@ -13,6 +14,13 @@ struct ClashMeowApp: App {
         .windowResizability(.contentMinSize)
         .windowToolbarStyle(.unified)
         .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("偏好设置…") {
+                    openWindow(id: SettingsView.windowID)
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
+
             CommandGroup(replacing: .appInfo) {
                 Button("About \(AppInfo.displayName)") {
                     ClashMeowAppContext.shared.openAboutWindow()
@@ -37,11 +45,11 @@ struct ClashMeowApp: App {
         .defaultSize(width: 360, height: 260)
         .windowResizability(.contentMinSize)
 
-        Settings {
+        Window("偏好设置", id: SettingsView.windowID) {
             SettingsView()
                 .environmentObject(appState)
         }
-        .defaultSize(width: 640, height: 720)
+        .defaultSize(width: 760, height: 480)
         .windowResizability(.contentMinSize)
     }
 }

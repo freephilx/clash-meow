@@ -159,8 +159,12 @@ struct RootView: View {
 }
 
 private struct SidebarSettingsRow: View {
+    @Environment(\.openWindow) private var openWindow
+
     var body: some View {
-        SettingsLink {
+        Button {
+            openWindow(id: SettingsView.windowID)
+        } label: {
             HStack(spacing: 10) {
                 Image(systemName: "gearshape")
                     .font(.system(size: 15, weight: .medium))

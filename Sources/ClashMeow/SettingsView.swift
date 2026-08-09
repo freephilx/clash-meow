@@ -1,7 +1,11 @@
+import AppKit
 import SwiftUI
 
 struct SettingsView: View {
+    static let windowID = "preferences"
+
     @EnvironmentObject private var state: AppState
+    @State private var selectedPane: SettingsPane = .general
     @State private var launchAtLogin = LaunchAtLoginManager.isEnabled
     @State private var coreEnabled = CoreAutoStartManager.isEnabled
     @State private var systemProxyEnabled = SystemProxyPreference.isEnabled
@@ -12,64 +16,174 @@ struct SettingsView: View {
     @State private var launchAtLoginErrorMessage: String?
 
     var body: some View {
-        Form {
-            Section {
+        NavigationSplitView {
+            preferencesSidebar
+                .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
+        } detail: {
+            preferenceDetail(for: selectedPane)
+        }
+        .frame(minWidth: 680, minHeight: 420, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(.background)
+        .onAppear(perform: reloadPreferences)
+    }
+
+    private var preferencesSidebar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("设置")
+                        .font(.system(size: 11))
+                        .foregroundStyle(SettingsPalette.sidebarHeader)
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 4)
+
+                    ForEach(SettingsPane.allCases) { pane in
+                        SettingsSidebarItem(
+                            pane: pane,
+                            isSelected: selectedPane == pane
+                        ) {
+                            selectedPane = pane
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 18)
+            }
+        }
+        .background(SettingsPalette.sidebar)
+    }
+
+    private func preferenceDetail(for pane: SettingsPane) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(pane.title)
+                    .font(.title2.weight(.semibold))
+                Text(pane.subtitle)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.top, 20)
+            .padding(.horizontal, 24)
+
+            Form {
+                switch pane {
+                case .general:
+                    generalSection
+                case .network:
+                    networkSection
+                case .diagnostics:
+                    diagnosticsSection
+                }
+            }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+        }
+        .background(.background)
+    }
+
+    private var generalSection: some View {
+        Section("通用") {
+            PreferenceControlRow(
+                title: "内核总开关",
+                description: "与概览右上角总开关一致；开启后，下次打开应用会恢复启动网络内核。"
+            ) {
                 Toggle("内核总开关", isOn: coreEnabledBinding)
-            } header: {
-                Text("内核")
-            } footer: {
-                Text("与概览右上角总开关一致。开启后，每次打开 \(AppInfo.displayName) 会恢复启动网络内核。")
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .tint(SettingsPalette.accent)
             }
 
-            Section {
+            PreferenceControlRow(
+                title: "登录时打开",
+                description: "登录 macOS 后自动打开 \(AppInfo.displayName)，默认关闭。"
+            ) {
+                Toggle("登录时打开", isOn: launchAtLoginBinding)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .tint(SettingsPalette.accent)
+            }
+
+            if let launchAtLoginErrorMessage {
+                Label(launchAtLoginErrorMessage, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var networkSection: some View {
+        Section("网络") {
+            PreferenceControlRow(
+                title: "系统代理",
+                description: "接管 macOS 系统代理，需要网络内核已经启动。"
+            ) {
                 Toggle("系统代理", isOn: systemProxyBinding)
-                Toggle("TUN 模式", isOn: tunBinding)
-            } header: {
-                Text("网络")
-            } footer: {
-                Text("偏好保存到 ~/.config/clash-meow/preferences.json。系统代理和 TUN 需要内核已启动；TUN 修改配置后会优先热重载，失败时重启内核。")
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .tint(SettingsPalette.accent)
             }
 
-            Section {
+            PreferenceControlRow(
+                title: "TUN 模式",
+                description: "修改后优先热重载运行配置，失败时重启网络内核。"
+            ) {
+                Toggle("TUN 模式", isOn: tunBinding)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .tint(SettingsPalette.accent)
+            }
+        }
+    }
+
+    private var diagnosticsSection: some View {
+        Section("互联网延迟诊断") {
+            PreferenceControlRow(
+                title: "公网测试 URL",
+                description: "使用逗号或换行分隔多个地址，诊断时依次测试。"
+            ) {
                 TextField("公网测试 URL", text: internetLatencyTestURLsBinding, axis: .vertical)
-                    .lineLimit(3...5)
+                    .labelsHidden()
+                    .lineLimit(2...4)
+                    .frame(width: 280)
+                    .accessibilityLabel("公网测试 URL")
+            }
+
+            PreferenceControlRow(
+                title: "DNS 测试域名",
+                description: "用于测量 DNS 解析延迟；路由器延迟会自动使用默认网关。"
+            ) {
                 TextField("DNS 测试域名", text: internetLatencyDNSDomainBinding)
+                    .labelsHidden()
+                    .frame(width: 220)
+                    .accessibilityLabel("DNS 测试域名")
+            }
+
+            PreferenceControlRow(
+                title: "诊断超时",
+                description: "控制每项互联网诊断等待响应的最长时间。"
+            ) {
                 Stepper(
-                    "诊断超时 \(internetLatencyTimeoutSeconds) 秒",
                     value: internetLatencyTimeoutBinding,
                     in: 1...10
-                )
-            } header: {
-                Text("互联网延迟诊断")
-            } footer: {
-                Text("公网测试 URL 可用逗号或换行分隔。路由器延迟会自动使用默认网关，不需要手动配置。")
-            }
-
-            Section {
-                Toggle("登录时打开", isOn: launchAtLoginBinding)
-                if let launchAtLoginErrorMessage {
-                    Text(launchAtLoginErrorMessage)
-                        .font(.caption)
-                        .foregroundStyle(.red)
+                ) {
+                    Text("\(internetLatencyTimeoutSeconds) 秒")
+                        .monospacedDigit()
                 }
-            } header: {
-                Text("启动")
-            } footer: {
-                Text("开启后，登录 macOS 时会自动启动 \(AppInfo.displayName)。")
+                .frame(width: 104)
             }
+        }
+    }
 
-        }
-        .formStyle(.grouped)
-        .padding(20)
-        .frame(minWidth: 560, idealWidth: 640, maxWidth: 820, minHeight: 620, idealHeight: 720)
-        .onAppear {
-            coreEnabled = CoreAutoStartManager.isEnabled
-            systemProxyEnabled = SystemProxyPreference.isEnabled
-            tunEnabled = TunPreference.isEnabled
-            internetLatencyTestURLs = InternetLatencyPreference.testURLsText
-            internetLatencyDNSDomain = InternetLatencyPreference.dnsDomain
-            internetLatencyTimeoutSeconds = InternetLatencyPreference.timeoutSeconds
-        }
+    private func reloadPreferences() {
+        launchAtLogin = LaunchAtLoginManager.isEnabled
+        coreEnabled = CoreAutoStartManager.isEnabled
+        systemProxyEnabled = SystemProxyPreference.isEnabled
+        tunEnabled = TunPreference.isEnabled
+        internetLatencyTestURLs = InternetLatencyPreference.testURLsText
+        internetLatencyDNSDomain = InternetLatencyPreference.dnsDomain
+        internetLatencyTimeoutSeconds = InternetLatencyPreference.timeoutSeconds
     }
 
     private var systemProxyBinding: Binding<Bool> {
@@ -146,5 +260,111 @@ struct SettingsView: View {
             internetLatencyTimeoutSeconds = value
             InternetLatencyPreference.timeoutSeconds = value
         }
+    }
+}
+
+private enum SettingsPane: String, CaseIterable, Identifiable {
+    case general
+    case network
+    case diagnostics
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .general: return "通用"
+        case .network: return "网络"
+        case .diagnostics: return "诊断"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .general: return "控制网络内核、登录启动和常用行为。"
+        case .network: return "管理系统代理和 TUN 网络接管方式。"
+        case .diagnostics: return "配置互联网延迟检测目标和超时时间。"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .general: return "gearshape"
+        case .network: return "network"
+        case .diagnostics: return "waveform.path.ecg"
+        }
+    }
+}
+
+private struct SettingsSidebarItem: View {
+    let pane: SettingsPane
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: pane.systemImage)
+                    .font(.system(size: 16))
+                    .frame(width: 20, height: 20)
+                Text(pane.title)
+                    .font(.system(size: 14))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(isSelected ? SettingsPalette.accent : SettingsPalette.ink)
+            .padding(.horizontal, 8)
+            .frame(height: 34)
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(
+                isSelected ? SettingsPalette.sidebarSelection : Color.clear,
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+        }
+        .buttonStyle(.plain)
+        .help(pane.title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+private struct PreferenceControlRow<Control: View>: View {
+    let title: String
+    let description: String
+    @ViewBuilder let control: () -> Control
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 20) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                Text(description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            control()
+                .controlSize(.regular)
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+private enum SettingsPalette {
+    static let accent = Color.accentColor
+    static let ink = Color.primary
+    static let sidebar = dynamic(light: 0xF6F8FA, dark: 0x14171C)
+    static let sidebarSelection = dynamic(light: 0xE9ECEF, dark: 0x2B2E36)
+    static let sidebarHeader = dynamic(light: 0x8B99AC, dark: 0x8C96A8)
+
+    private static func dynamic(light: UInt32, dark: UInt32) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let value = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+            return NSColor(
+                srgbRed: CGFloat((value >> 16) & 0xFF) / 255,
+                green: CGFloat((value >> 8) & 0xFF) / 255,
+                blue: CGFloat(value & 0xFF) / 255,
+                alpha: 1
+            )
+        })
     }
 }
