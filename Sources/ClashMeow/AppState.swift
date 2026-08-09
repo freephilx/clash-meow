@@ -37,6 +37,7 @@ final class AppState: ObservableObject {
     @Published var proxyGroups: [ProxyGroupItem] = []
     @Published var rules: [RuleItem] = []
     @Published var ruleProviders: [RuleProviderItem] = []
+    @Published private(set) var isRefreshingRules = false
     @Published private(set) var appLogs: [CoreLogEntry] = []
     @Published var isStreamingLogs = false
     let mihomoLogStore = MihomoLogStore()
@@ -1547,7 +1548,15 @@ final class AppState: ObservableObject {
     }
 
     func refreshRules() async {
-        guard core.status.isHealthy else { return }
+        guard core.status.isHealthy else {
+            rules = []
+            ruleProviders = []
+            return
+        }
+        guard !isRefreshingRules else { return }
+        isRefreshingRules = true
+        defer { isRefreshingRules = false }
+
         do {
             async let refreshedRules = api.rules()
             async let refreshedProviders = api.ruleProviders()
@@ -1608,8 +1617,8 @@ final class AppState: ObservableObject {
 
     func addRuleOverride(_ ruleText: String, placement: RuleOverridePlacement) async {
         let rule = ruleText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !rule.isEmpty else {
-            showToast("规则不能为空")
+        guard RuleOverrideSet.isValidRuleText(rule) else {
+            showToast("规则格式不完整")
             return
         }
         guard let profileID = currentProfile?.id else {
@@ -1617,17 +1626,50 @@ final class AppState: ObservableObject {
             return
         }
 
-        do {
-            suppressFileChangeNotifications()
-            try profileRepository.addRuleOverride(profileID: profileID, rule: rule, placement: placement)
-            refreshProfiles()
-            updateActiveProfileFileMonitor()
-            loadActiveProfileSnapshot()
-            await applyRuleOverrideRuntimeChange(toastMessage: "已添加规则")
+        let didApply = await applyRuleOverrideChange(
+            profileID: profileID,
+            successMessage: "已添加规则",
+            failureMessage: "添加规则失败"
+        ) { repository in
+            try repository.addRuleOverride(profileID: profileID, rule: rule, placement: placement)
+        }
+        if didApply {
             addEvent(source: "Rule", title: "添加配置规则", detail: rule)
-        } catch {
-            showToast("添加规则失败")
-            addEvent(source: "Rule", title: "添加规则失败", detail: error.localizedDescription)
+        }
+    }
+
+    func updateRule(_ rule: RuleItem, with ruleText: String) async {
+        let updatedRule = ruleText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard RuleOverrideSet.isValidRuleText(updatedRule) else {
+            showToast("规则格式不完整")
+            return
+        }
+        guard rule.overrideRuleText != updatedRule else {
+            showToast("规则未变更")
+            return
+        }
+        guard let profileID = currentProfile?.id else {
+            showToast("没有当前配置")
+            return
+        }
+
+        let didApply = await applyRuleOverrideChange(
+            profileID: profileID,
+            successMessage: "已修改规则",
+            failureMessage: "修改规则失败"
+        ) { repository in
+            try repository.replaceRuleOverride(
+                profileID: profileID,
+                oldRule: rule.overrideRuleText,
+                newRule: updatedRule
+            )
+        }
+        if didApply {
+            addEvent(
+                source: "Rule",
+                title: "修改配置规则",
+                detail: "\(rule.overrideRuleText) -> \(updatedRule)"
+            )
         }
     }
 
@@ -2036,22 +2078,73 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func applyRuleOverrideRuntimeChange(toastMessage: String) async {
-        guard core.status.isHealthy else {
-            showToast(toastMessage)
-            addEvent(source: "Rule", title: "规则已保存", detail: "内核未运行，将在下次启动时生效。")
-            return
+    private func applyRuleOverrideChange(
+        profileID: String,
+        successMessage: String,
+        failureMessage: String,
+        update: (ProfileRepository) throws -> Void
+    ) async -> Bool {
+        let repository = profileRepository
+        let previousOverrides: RuleOverrideSet
+        do {
+            previousOverrides = try repository.ruleOverrides(profileID: profileID)
+        } catch {
+            showToast(failureMessage)
+            addEvent(source: "Rule", title: failureMessage, detail: error.localizedDescription)
+            return false
         }
+        let previousRuntimeData = try? Data(contentsOf: core.configFile)
 
         do {
-            try await api.reloadConfig(path: core.configFile)
-            await refresh()
-            showToast(toastMessage)
-            addEvent(source: "Rule", title: "规则热更新", detail: "已通过 controller 重新加载 runtime config。")
+            suppressFileChangeNotifications()
+            try update(repository)
+            refreshProfiles()
+            updateActiveProfileFileMonitor()
+            loadActiveProfileSnapshot()
+
+            if core.status.isHealthy {
+                try await api.reloadConfig(path: core.configFile)
+                await refreshRules()
+                addEvent(source: "Rule", title: "规则热更新", detail: "已通过 controller 重新加载 runtime config。")
+            } else {
+                addEvent(source: "Rule", title: "规则已保存", detail: "内核未运行，将在下次启动时生效。")
+            }
+            showToast(successMessage)
+            return true
         } catch {
-            showToast("规则已保存，热更新失败")
-            addEvent(source: "Rule", title: "规则热更新失败", detail: error.localizedDescription)
-            AppLogSupport.error("规则热更新失败: \(error.localizedDescription)", module: "Rule", logsDirectory: core.logsDirectory)
+            let updateError = error
+            suppressFileChangeNotifications()
+            do {
+                try repository.setRuleOverrides(profileID: profileID, overrides: previousOverrides)
+                if let previousRuntimeData {
+                    try previousRuntimeData.write(to: core.configFile, options: .atomic)
+                } else if FileManager.default.fileExists(atPath: core.configFile.path) {
+                    try FileManager.default.removeItem(at: core.configFile)
+                }
+                if core.status.isHealthy {
+                    try await api.reloadConfig(path: core.configFile)
+                }
+            } catch {
+                AppLogSupport.error(
+                    "恢复旧规则配置失败: \(error.localizedDescription)",
+                    module: "Rule",
+                    logsDirectory: core.logsDirectory
+                )
+            }
+            refreshProfiles()
+            updateActiveProfileFileMonitor()
+            loadActiveProfileSnapshot()
+            if core.status.isHealthy {
+                await refreshRules()
+            }
+            showToast(failureMessage)
+            addEvent(source: "Rule", title: failureMessage, detail: updateError.localizedDescription)
+            AppLogSupport.error(
+                "\(failureMessage): \(updateError.localizedDescription)",
+                module: "Rule",
+                logsDirectory: core.logsDirectory
+            )
+            return false
         }
     }
 

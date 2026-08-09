@@ -1128,6 +1128,7 @@ private struct RulesContent: View {
     @State private var typeFilters = Set<String>()
     @State private var policyFilters = Set<String>()
     @State private var isAddingRuleOverride = false
+    @State private var editingRule: RuleItem?
     private let leadingOptionWidth: CGFloat = 78
 
     private var filteredRules: [RuleItem] {
@@ -1166,32 +1167,50 @@ private struct RulesContent: View {
 
     var body: some View {
         PageScaffold(title: "规则") {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
                     TextField(selectedTab == .rules ? "搜索规则" : "搜索规则集合", text: $searchText)
-                        .textFieldStyle(.roundedBorder)
+                        .textFieldStyle(RuleTextFieldStyle())
 
                     Button {
                         Task { await state.refreshRules() }
                     } label: {
-                        Label("刷新", systemImage: "arrow.clockwise")
+                        if state.isRefreshingRules {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
                     }
+                    .buttonStyle(.plain)
+                    .frame(width: 24, height: 24)
+                    .disabled(state.isRefreshingRules)
+                    .help("刷新规则")
+                    .accessibilityLabel("刷新规则")
 
-                    Button {
-                        isAddingRuleOverride = true
-                    } label: {
-                        Image(systemName: "plus")
+                    if selectedTab == .rules {
+                        Button {
+                            isAddingRuleOverride = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .buttonStyle(.plain)
+                        .frame(width: 24, height: 24)
+                        .help("添加规则")
+                        .accessibilityLabel("添加规则")
                     }
-                    .help("添加规则")
-                    .accessibilityLabel("添加规则")
 
                     if selectedTab == .ruleProviders {
                         Button {
                             Task { await state.updateAllRuleProviders() }
                         } label: {
-                            Label("全部更新", systemImage: "arrow.triangle.2.circlepath")
+                            Image(systemName: "arrow.triangle.2.circlepath")
                         }
+                        .buttonStyle(.plain)
+                        .frame(width: 24, height: 24)
                         .disabled(state.ruleProviders.isEmpty || !state.core.status.isHealthy || !state.updatingRuleProviderNames.isEmpty)
+                        .help("更新全部规则集合")
+                        .accessibilityLabel("更新全部规则集合")
                     }
                 }
 
@@ -1213,40 +1232,42 @@ private struct RulesContent: View {
                     rulesToolbar
 
                     if filteredRules.isEmpty {
-                        ContentUnavailableView {
-                            Label(hasActiveFilters ? "没有匹配规则" : "暂无规则", systemImage: "list.bullet.rectangle")
-                        } description: {
-                            Text(hasActiveFilters ? "清除筛选或换一个关键词。" : (state.core.status.isHealthy ? "controller 暂未返回规则。" : "启动内核后可读取运行时规则。"))
-                        } actions: {
-                            Button(hasActiveFilters ? "清除筛选" : "刷新") {
-                                if hasActiveFilters {
-                                    clearFilters()
-                                } else {
-                                    Task { await state.refreshRules() }
-                                }
+                        RuleEmptyView(
+                            title: hasActiveFilters ? "没有匹配规则" : "暂无规则",
+                            message: hasActiveFilters ? "清除筛选或换一个关键词。" : (state.core.status.isHealthy ? "controller 暂未返回规则。" : "启动内核后可读取运行时规则。"),
+                            buttonTitle: hasActiveFilters ? "清除筛选" : "刷新",
+                            systemImage: "list.bullet.rectangle"
+                        ) {
+                            if hasActiveFilters {
+                                clearFilters()
+                            } else {
+                                Task { await state.refreshRules() }
                             }
                         }
-                        .frame(maxWidth: .infinity, minHeight: 240)
-
                     } else {
                         LazyVStack(spacing: 8) {
                             ForEach(filteredRules) { rule in
-                                RuleRow(rule: rule)
+                                RuleRow(
+                                    rule: rule,
+                                    isControllerReady: state.core.status.isHealthy,
+                                    edit: { editingRule = rule },
+                                    setEnabled: { isEnabled in
+                                        Task { await state.setRule(rule, isEnabled: isEnabled) }
+                                    }
+                                )
                             }
                         }
                     }
                 } else {
                     if filteredRuleProviders.isEmpty {
-                        ContentUnavailableView {
-                            Label(searchText.isEmpty ? "暂无规则集合" : "没有匹配规则集合", systemImage: "tray.full")
-                        } description: {
-                            Text(searchText.isEmpty ? "当前配置没有 rule-providers，或 controller 暂未返回规则集合。" : "换一个关键词试试。")
-                        } actions: {
-                            Button("刷新") {
-                                Task { await state.refreshRules() }
-                            }
+                        RuleEmptyView(
+                            title: searchText.isEmpty ? "暂无规则集合" : "没有匹配规则集合",
+                            message: searchText.isEmpty ? "当前配置没有 rule-providers，或 controller 暂未返回规则集合。" : "换一个关键词试试。",
+                            buttonTitle: "刷新",
+                            systemImage: "tray.full"
+                        ) {
+                            Task { await state.refreshRules() }
                         }
-                        .frame(maxWidth: .infinity, minHeight: 240)
                     } else {
                         LazyVStack(spacing: 8) {
                             ForEach(filteredRuleProviders) { provider in
@@ -1261,7 +1282,11 @@ private struct RulesContent: View {
             await state.refreshRules()
         }
         .sheet(isPresented: $isAddingRuleOverride) {
-            AddRuleOverrideView()
+            RuleEditorView()
+                .environmentObject(state)
+        }
+        .sheet(item: $editingRule) { rule in
+            RuleEditorView(initialRule: rule)
                 .environmentObject(state)
         }
     }
@@ -1354,149 +1379,206 @@ private struct RulesContent: View {
     }
 }
 
-struct AddRuleOverrideView: View {
+private struct RuleEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var state: AppState
-    @State private var draft = RuleOverrideDraft()
-    @State private var placement: RuleOverridePlacement = .prepend
+    let initialRule: RuleItem?
+
+    @State private var typeText: String
+    @State private var payload: String
+    @State private var proxy: String
+    @State private var useRawInput = false
+    @State private var rawRule: String
+
+    init(initialRule: RuleItem? = nil) {
+        self.initialRule = initialRule
+        _typeText = State(initialValue: initialRule?.type ?? "DOMAIN-SUFFIX")
+        _payload = State(initialValue: initialRule?.payload ?? "")
+        _proxy = State(initialValue: initialRule?.proxy ?? "DIRECT")
+        _rawRule = State(initialValue: initialRule?.overrideRuleText ?? "")
+    }
 
     private var proxyOptions: [String] {
         let builtin = ["DIRECT", "REJECT"]
+        let existing = state.rules.map(\.proxy).filter { !$0.isEmpty && $0 != "-" }
         let groups = state.activeProfileProxyGroups.map(\.name)
         let nodes = state.activeProfileNodes.map(\.name)
-        return Array(Set(builtin + groups + nodes)).sorted {
+        return Array(Set(builtin + existing + groups + nodes)).sorted {
             $0.localizedStandardCompare($1) == .orderedAscending
         }
     }
 
+    private var trimmedType: String {
+        typeText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var trimmedPayload: String {
+        payload.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var trimmedProxy: String {
+        proxy.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var trimmedRawRule: String {
+        rawRule.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var ruleText: String {
+        if useRawInput {
+            return trimmedRawRule
+        }
+        if trimmedType.uppercased() == "MATCH" {
+            return "MATCH,\(trimmedProxy)"
+        }
+        return "\(trimmedType),\(trimmedPayload),\(trimmedProxy)"
+    }
+
     private var canSubmit: Bool {
-        draft.isValid
+        RuleOverrideSet.isValidRuleText(ruleText)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("添加规则")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(ClashMeowPalette.ink)
-
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("位置")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(ClashMeowPalette.muted)
-                        WrappingRuleOptionRow {
-                            ForEach(RuleOverridePlacement.allCases) { item in
-                                RuleOptionButton(
-                                    title: item.title,
-                                    isSelected: placement == item,
-                                    color: ClashMeowPalette.purple,
-                                    width: 78
-                                ) {
-                                    placement = item
-                                }
-                            }
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("类型")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(ClashMeowPalette.muted)
-                        WrappingRuleOptionRow {
-                            ForEach(RuleOverrideDraft.commonTypes, id: \.self) { type in
-                                RuleOptionButton(
-                                    title: type,
-                                    isSelected: draft.type == type,
-                                    color: ClashMeowPalette.purple
-                                ) {
-                                    draft.type = type
-                                    draft.normalizeForSelectedType()
-                                }
-                            }
-                        }
-                    }
-
-                    TextField("匹配内容", text: $draft.payload)
-                        .textFieldStyle(.roundedBorder)
-                        .disabled(!draft.requiresPayload)
-                        .onSubmit { submit() }
-
-                    TextField("出站策略", text: $draft.proxy)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit { submit() }
-
-                    if !proxyOptions.isEmpty {
-                        WrappingRuleOptionRow {
-                            ForEach(proxyOptions, id: \.self) { proxy in
-                                RuleOptionButton(
-                                    title: proxy,
-                                    isSelected: draft.proxy == proxy,
-                                    color: ClashMeowPalette.purple
-                                ) {
-                                    draft.proxy = proxy
-                                }
-                            }
-                        }
-                    }
-
-                    if draft.supportsNoResolve || draft.supportsSource {
-                        HStack(spacing: 14) {
-                            if draft.supportsNoResolve {
-                                Toggle("no-resolve", isOn: $draft.noResolve)
-                            }
-                            if draft.supportsSource {
-                                Toggle("src", isOn: $draft.source)
-                            }
-                        }
-                        .toggleStyle(.checkbox)
-                        .font(.system(size: 12, weight: .semibold))
-                    }
-                }
-            }
-            .frame(maxHeight: 480)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("实时结果")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(ClashMeowPalette.muted)
-                Text(draft.ruleText)
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(ClashMeowPalette.purple)
-                    .lineLimit(nil)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(ClashMeowPalette.purple.opacity(0.14), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-
+        VStack(alignment: .leading, spacing: 16) {
             HStack {
+                Text(initialRule == nil ? "添加规则" : "修改规则")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(ClashMeowPalette.ink)
                 Spacer()
                 Button("取消") {
                     dismiss()
                 }
-                Button("确定") {
+            }
+
+            Toggle("直接输入规则", isOn: $useRawInput)
+                .toggleStyle(.switch)
+                .tint(ClashMeowPalette.purple)
+
+            if useRawInput {
+                TextField("DOMAIN-SUFFIX,example.com,DIRECT", text: $rawRule)
+                    .textFieldStyle(RuleTextFieldStyle())
+                    .onSubmit { submit() }
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("类型")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(ClashMeowPalette.muted)
+                    TextField("DOMAIN-SUFFIX", text: $typeText)
+                        .textFieldStyle(RuleTextFieldStyle())
+                    WrappingRuleOptionRow {
+                        ForEach(RuleOverrideDraft.commonTypes, id: \.self) { type in
+                            RuleOptionButton(
+                                title: type,
+                                isSelected: trimmedType == type,
+                                color: ClashMeowPalette.purple
+                            ) {
+                                typeText = type
+                            }
+                        }
+                    }
+
+                    if trimmedType.uppercased() != "MATCH" {
+                        Text("匹配内容")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(ClashMeowPalette.muted)
+                        TextField(payloadPlaceholder, text: $payload)
+                            .textFieldStyle(RuleTextFieldStyle())
+                    }
+
+                    Text("策略")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(ClashMeowPalette.muted)
+                    TextField("出站策略", text: $proxy)
+                        .textFieldStyle(RuleTextFieldStyle())
+                        .onSubmit { submit() }
+
+                    if !proxyOptions.isEmpty {
+                        WrappingRuleOptionRow {
+                            ForEach(proxyOptions, id: \.self) { option in
+                                RuleOptionButton(
+                                    title: option,
+                                    isSelected: proxy == option,
+                                    color: ClashMeowPalette.purple
+                                ) {
+                                    proxy = option
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("预览")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(ClashMeowPalette.muted)
+                Text(ruleText.isEmpty ? "-" : ruleText)
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(ClashMeowPalette.ink)
+                    .lineLimit(2)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(hex: 0xF0F2F7), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+
+            HStack {
+                Spacer()
+                Button(initialRule == nil ? "添加" : "保存") {
                     submit()
                 }
+                .buttonStyle(.borderedProminent)
+                .tint(ClashMeowPalette.purple)
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canSubmit)
             }
         }
         .padding(20)
-        .frame(width: 560)
-        .frame(maxHeight: 620)
+        .frame(width: 520)
     }
 
     private func submit() {
         guard canSubmit else { return }
-        let rule = draft.ruleText
-        let selectedPlacement = placement
+        let submittedRule = ruleText
+        let ruleToEdit = initialRule
         Task {
-            await state.addRuleOverride(rule, placement: selectedPlacement)
+            if let ruleToEdit {
+                await state.updateRule(ruleToEdit, with: submittedRule)
+            } else {
+                await state.addRuleOverride(submittedRule, placement: .prepend)
+            }
             dismiss()
         }
+    }
+
+    private var payloadPlaceholder: String {
+        switch trimmedType.uppercased() {
+        case "DOMAIN-SUFFIX": "example.com"
+        case "DOMAIN": "api.example.com"
+        case "DOMAIN-KEYWORD": "example"
+        case "IP-CIDR", "IP-CIDR6", "SRC-IP-CIDR": "8.8.8.0/24"
+        case "GEOIP": "CN"
+        default: "匹配内容"
+        }
+    }
+}
+
+private struct RuleTextFieldStyle: TextFieldStyle {
+    @Environment(\.isFocused) private var isFocused
+
+    func _body(configuration: TextField<Self._Label>) -> some View {
+        configuration
+            .textFieldStyle(.plain)
+            .tint(ClashMeowPalette.purple)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(ClashMeowPalette.card, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(
+                        isFocused ? ClashMeowPalette.purple.opacity(0.72) : ClashMeowPalette.faintLine,
+                        lineWidth: 1
+                    )
+            }
     }
 }
 
@@ -1742,24 +1824,39 @@ private struct RuleOptionButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: fontSize, weight: .semibold))
-                .foregroundStyle(isSelected ? color : ClashMeowPalette.ink.opacity(0.76))
+                .font(.system(size: fontSize, weight: .bold))
+                .foregroundStyle(isSelected ? color : ClashMeowPalette.muted)
                 .lineLimit(1)
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 12)
                 .frame(width: width, height: height)
-                .background(backgroundColor, in: Capsule())
+                .background(
+                    (isSelected ? color : ClashMeowPalette.muted).opacity(0.09),
+                    in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                )
         }
         .buttonStyle(.plain)
     }
+}
 
-    private var backgroundColor: Color {
-        isSelected ? color.opacity(0.14) : Color(hex: 0xE7ECF3)
+private struct RuleChip: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(ClashMeowPalette.muted)
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .frame(height: 22)
+            .background(Color(hex: 0xF0F2F7), in: Capsule())
     }
 }
 
 private struct RuleRow: View {
-    @EnvironmentObject private var state: AppState
     let rule: RuleItem
+    let isControllerReady: Bool
+    let edit: () -> Void
+    let setEnabled: (Bool) -> Void
 
     private var hitRateText: String {
         guard let rate = rule.hitRate else { return "-" }
@@ -1781,16 +1878,17 @@ private struct RuleRow: View {
             Toggle("", isOn: Binding {
                 rule.isEnabled
             } set: { isEnabled in
-                Task { await state.setRule(rule, isEnabled: isEnabled) }
+                setEnabled(isEnabled)
             })
             .labelsHidden()
             .toggleStyle(.switch)
+            .tint(ClashMeowPalette.purple)
             .controlSize(.mini)
-            .disabled(!state.core.status.isHealthy)
+            .disabled(!isControllerReady)
 
             Text(rule.type)
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundStyle(ClashMeowPalette.purple)
+                .foregroundStyle(ClashMeowPalette.ink)
                 .frame(width: 96, alignment: .leading)
                 .lineLimit(1)
 
@@ -1807,12 +1905,21 @@ private struct RuleRow: View {
 
             Spacer(minLength: 8)
 
-            ProfileChip(text: hitRateText)
+            RuleChip(text: hitRateText)
             Text(rule.proxy)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(ClashMeowPalette.muted)
                 .frame(width: 110, alignment: .trailing)
                 .lineLimit(1)
+
+            Button(action: edit) {
+                Image(systemName: "pencil")
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(ClashMeowPalette.purple)
+            .help("修改规则")
         }
         .padding(12)
         .surfaceCard()
@@ -1821,8 +1928,9 @@ private struct RuleRow: View {
             Button("复制规则") {
                 let pasteboard = NSPasteboard.general
                 pasteboard.clearContents()
-                pasteboard.setString("\(rule.type),\(rule.payload),\(rule.proxy)", forType: .string)
+                pasteboard.setString(rule.overrideRuleText, forType: .string)
             }
+            Button("修改规则", action: edit)
         }
     }
 }
@@ -1845,12 +1953,12 @@ private struct RuleProviderRow: View {
                     .lineLimit(1)
 
                 HStack(spacing: 6) {
-                    ProfileChip(text: provider.displayBehavior)
-                    ProfileChip(text: provider.displayVehicleType)
-                    ProfileChip(text: provider.displayFormat)
-                    ProfileChip(text: provider.ruleCountText)
+                    RuleChip(text: provider.displayBehavior)
+                    RuleChip(text: provider.displayVehicleType)
+                    RuleChip(text: provider.displayFormat)
+                    RuleChip(text: provider.ruleCountText)
                     if let updatedAt = provider.updatedAt, !updatedAt.isEmpty {
-                        ProfileChip(text: updatedAt)
+                        RuleChip(text: updatedAt)
                     }
                 }
                 .lineLimit(1)
@@ -1888,6 +1996,28 @@ private struct RuleProviderRow: View {
             }
             .disabled(!state.core.status.isHealthy)
         }
+    }
+}
+
+private struct RuleEmptyView: View {
+    let title: String
+    let message: String
+    let buttonTitle: String
+    let systemImage: String
+    let action: () -> Void
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Label(title, systemImage: systemImage)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(ClashMeowPalette.ink)
+            Text(message)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(ClashMeowPalette.muted)
+            Button(buttonTitle, action: action)
+        }
+        .frame(maxWidth: .infinity, minHeight: 240)
+        .surfaceCard()
     }
 }
 
@@ -2687,7 +2817,11 @@ private struct NetworkManageCard: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(primaryUsageText)
-                                .font(.system(size: 23, weight: .bold))
+                                .font(.system(
+                                    size: subscription == nil ? 21 : 23,
+                                    weight: subscription == nil ? .medium : .bold
+                                ))
+                                .foregroundStyle(subscription == nil ? Color.secondary : Color.primary)
                             Text(secondaryUsageText)
                                 .font(.system(size: 21, weight: .medium))
                                 .foregroundStyle(.secondary)

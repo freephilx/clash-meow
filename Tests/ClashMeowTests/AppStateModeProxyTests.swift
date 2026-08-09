@@ -236,6 +236,51 @@ struct AppStateModeProxyTests {
         #expect(MockMihomoURLProtocolSupport.handledRequests.contains { $0.method == "PUT" && $0.path == "/configs" })
     }
 
+    @Test func ruleUpdateWritesReplacementOverrideAndHotReloads() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "clash-meow-rule-update-\(UUID().uuidString)", directoryHint: .isDirectory)
+        AppPersistencePaths.configDirectoryOverrideForTesting = directory
+        defer {
+            AppPersistencePaths.configDirectoryOverrideForTesting = nil
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let (state, rule) = try Self.makeRuleEditingState(in: directory)
+        await state.updateRule(rule, with: "DOMAIN-SUFFIX,new.example.com,DIRECT")
+
+        let overrides = AppPreferenceStore.readMihomoSettings().profiles
+            .first { $0.id == "selected-profile" }?.ruleOverrides
+        let runtimeYAML = try String(contentsOf: Self.runtimeConfigURL(in: directory), encoding: .utf8)
+        #expect(overrides?.prepend == ["DOMAIN-SUFFIX,new.example.com,DIRECT"])
+        #expect(overrides?.delete == ["DOMAIN-SUFFIX,old.example.com,Proxy"])
+        #expect(runtimeYAML.contains("DOMAIN-SUFFIX,new.example.com,DIRECT"))
+        #expect(!runtimeYAML.contains("DOMAIN-SUFFIX,old.example.com,Proxy"))
+        #expect(state.toast?.message == "已修改规则")
+        #expect(MockMihomoURLProtocolSupport.handledRequests.contains { $0.method == "PUT" && $0.path == "/configs" })
+    }
+
+    @Test func ruleUpdateRestoresOverridesAndRuntimeWhenHotReloadFails() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "clash-meow-rule-update-rollback-\(UUID().uuidString)", directoryHint: .isDirectory)
+        AppPersistencePaths.configDirectoryOverrideForTesting = directory
+        defer {
+            AppPersistencePaths.configDirectoryOverrideForTesting = nil
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let (state, rule) = try Self.makeRuleEditingState(in: directory, reloadConfigShouldFail: true)
+        let previousRuntimeYAML = try String(contentsOf: Self.runtimeConfigURL(in: directory), encoding: .utf8)
+        await state.updateRule(rule, with: "DOMAIN-SUFFIX,new.example.com,DIRECT")
+
+        let overrides = AppPreferenceStore.readMihomoSettings().profiles
+            .first { $0.id == "selected-profile" }?.ruleOverrides
+        let restoredRuntimeYAML = try String(contentsOf: Self.runtimeConfigURL(in: directory), encoding: .utf8)
+        #expect(overrides?.isEmpty == true)
+        #expect(restoredRuntimeYAML == previousRuntimeYAML)
+        #expect(state.toast?.message == "修改规则失败")
+        #expect(MockMihomoURLProtocolSupport.handledRequests.filter { $0.method == "PUT" && $0.path == "/configs" }.count == 2)
+    }
+
     @Test func refreshRulesLoadsAndUpdatesRuleProviders() async throws {
         let state = makeConfiguredState()
 
@@ -1085,6 +1130,59 @@ struct AppStateModeProxyTests {
         rootDirectory
             .appending(path: "configs", directoryHint: .isDirectory)
             .appending(path: "mihomo", directoryHint: .isDirectory)
+    }
+
+    private static func makeRuleEditingState(
+        in directory: URL,
+        reloadConfigShouldFail: Bool = false
+    ) throws -> (state: AppState, rule: RuleItem) {
+        MockMihomoURLProtocolSupport.reset(reloadConfigShouldFail: reloadConfigShouldFail)
+        let session = MihomoAPI.makeMockSession(protocolClass: MockMihomoURLProtocol.self)
+        var api = MihomoAPI(baseURL: URL(string: "http://127.0.0.1:9090")!)
+        api.urlSession = session
+
+        let mihomoConfigsDirectory = mihomoConfigsURL(in: directory)
+        try FileManager.default.createDirectory(at: mihomoConfigsDirectory, withIntermediateDirectories: true)
+        let profileYAML = """
+        mixed-port: 7890
+        proxy-groups:
+          - name: Proxy
+            type: select
+            proxies:
+              - DIRECT
+        rules:
+          - DOMAIN-SUFFIX,old.example.com,Proxy
+          - MATCH,DIRECT
+        """
+        try profileYAML.write(
+            to: mihomoConfigsDirectory.appending(path: "selected-profile.yaml"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let repository = ProfileRepository(
+            configDirectory: directory,
+            activeConfigFile: runtimeConfigURL(in: directory)
+        )
+        try repository.activateProfile(id: "selected-profile")
+
+        let state = AppState()
+        state.useAPIForTesting(api)
+        state.core.applyDemoPresentation()
+        state.refreshProfiles()
+        let rule = RuleItem(
+            id: "0-DOMAIN-SUFFIX-old.example.com",
+            index: 0,
+            type: "DOMAIN-SUFFIX",
+            payload: "old.example.com",
+            proxy: "Proxy",
+            isEnabled: true,
+            hitCount: 0,
+            missCount: 0,
+            lastHit: nil,
+            lastMiss: nil,
+            size: 0
+        )
+        return (state, rule)
     }
 
     @discardableResult

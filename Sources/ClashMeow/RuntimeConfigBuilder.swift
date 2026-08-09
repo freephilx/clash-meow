@@ -157,10 +157,28 @@ struct RuleOverrideSet: Codable, Equatable {
         delete.removeAll { $0 == normalized }
         switch placement {
         case .prepend:
-            if !prepend.contains(normalized) { prepend.append(normalized) }
+            prepend.removeAll { $0 == normalized }
+            append.removeAll { $0 == normalized }
+            prepend.insert(normalized, at: 0)
         case .append:
+            prepend.removeAll { $0 == normalized }
             if !append.contains(normalized) { append.append(normalized) }
         }
+    }
+
+    mutating func replace(_ oldRule: String, with newRule: String) {
+        let oldRule = Self.normalized(oldRule)
+        let newRule = Self.normalized(newRule)
+        guard !oldRule.isEmpty, !newRule.isEmpty, oldRule != newRule else { return }
+
+        let wasLocalOverride = prepend.contains(oldRule) || append.contains(oldRule)
+        prepend.removeAll { $0 == oldRule || $0 == newRule }
+        append.removeAll { $0 == oldRule || $0 == newRule }
+        delete.removeAll { $0 == newRule }
+        if !wasLocalOverride, !delete.contains(oldRule) {
+            delete.append(oldRule)
+        }
+        prepend.insert(newRule, at: 0)
     }
 
     mutating func setDeleted(_ rule: String, isDeleted: Bool) {
@@ -179,6 +197,17 @@ struct RuleOverrideSet: Codable, Equatable {
 
     private static func normalized(_ rule: String) -> String {
         rule.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func isValidRuleText(_ rule: String) -> Bool {
+        let parts = normalized(rule)
+            .split(separator: ",", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard let type = parts.first, !type.isEmpty else { return false }
+        if type.uppercased() == "MATCH" {
+            return parts.count == 2 && !parts[1].isEmpty
+        }
+        return parts.count >= 3 && !parts[1].isEmpty && !parts[2].isEmpty
     }
 }
 

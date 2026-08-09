@@ -151,6 +151,7 @@ struct AppPreferenceStoreTests {
             }
 
             try repository.restoreSelectedProfileIfNeeded()
+            AppLogSupport.flush()
 
             let activeYAML = try String(contentsOf: activeConfig, encoding: .utf8)
             let appLog = try String(contentsOf: Self.appLogURL(in: directory), encoding: .utf8)
@@ -229,6 +230,38 @@ struct AppPreferenceStoreTests {
             #expect(enabledActiveYAML.contains("DOMAIN-SUFFIX,example.com,Proxy"))
             #expect(enabledMetadata?.ruleOverrides.isEmpty == true)
             #expect(!FileManager.default.fileExists(atPath: mihomoConfigsDirectory.appending(path: "\(selectedID).rules.yaml").path))
+        }
+    }
+
+    @Test func profileRepositoryRuleReplacementUpdatesOverridesAndRuntimeConfig() throws {
+        try AppPreferenceStoreTestIsolation.withTemporaryDirectory(prefix: "clash-meow-profiles") { directory in
+            let activeConfig = Self.runtimeConfigURL(in: directory)
+            let repository = ProfileRepository(configDirectory: directory, activeConfigFile: activeConfig)
+            _ = try repository.listProfiles()
+
+            let selectedID = "selected-profile"
+            try Self.profileYAML(
+                groupName: "Selected",
+                extraRule: "DOMAIN-SUFFIX,old.example.com,Proxy"
+            ).write(
+                to: Self.mihomoConfigsURL(in: directory).appending(path: "\(selectedID).yaml"),
+                atomically: true,
+                encoding: .utf8
+            )
+            try repository.activateProfile(id: selectedID)
+
+            try repository.replaceRuleOverride(
+                profileID: selectedID,
+                oldRule: "DOMAIN-SUFFIX,old.example.com,Proxy",
+                newRule: "DOMAIN-SUFFIX,new.example.com,DIRECT"
+            )
+
+            let activeYAML = try String(contentsOf: activeConfig, encoding: .utf8)
+            let overrides = try repository.ruleOverrides(profileID: selectedID)
+            #expect(activeYAML.contains("DOMAIN-SUFFIX,new.example.com,DIRECT"))
+            #expect(!activeYAML.contains("DOMAIN-SUFFIX,old.example.com,Proxy"))
+            #expect(overrides.prepend == ["DOMAIN-SUFFIX,new.example.com,DIRECT"])
+            #expect(overrides.delete == ["DOMAIN-SUFFIX,old.example.com,Proxy"])
         }
     }
 

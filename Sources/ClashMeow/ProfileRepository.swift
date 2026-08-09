@@ -222,6 +222,22 @@ struct ProfileRepository {
         }
     }
 
+    func replaceRuleOverride(profileID: String, oldRule: String, newRule: String) throws {
+        try updateRuleOverrides(profileID: profileID, reason: "ruleOverrideUpdate") { overrides in
+            overrides.replace(oldRule, with: newRule)
+        }
+    }
+
+    func ruleOverrides(profileID: String) throws -> RuleOverrideSet {
+        try loadRuleOverrides(for: profileID)
+    }
+
+    func setRuleOverrides(profileID: String, overrides: RuleOverrideSet) throws {
+        try updateRuleOverrides(profileID: profileID, reason: "ruleOverrideRestore") { current in
+            current = overrides
+        }
+    }
+
     func setRuleDeletedOverride(profileID: String, rule: String, isDeleted: Bool) throws {
         try updateRuleOverrides(profileID: profileID, reason: "ruleDeleteOverride") { overrides in
             overrides.setDeleted(rule, isDeleted: isDeleted)

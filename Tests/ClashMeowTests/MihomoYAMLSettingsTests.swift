@@ -108,6 +108,43 @@ struct MihomoYAMLSettingsTests {
         #expect(overrides.delete.isEmpty)
     }
 
+    @Test func ruleOverrideAddPlacesNewestRuleFirst() {
+        var overrides = RuleOverrideSet(
+            prepend: ["DOMAIN-SUFFIX,first.example.com,Proxy"],
+            append: ["DOMAIN-SUFFIX,moved.example.com,DIRECT"]
+        )
+
+        overrides.add("DOMAIN-SUFFIX,second.example.com,Proxy", placement: .prepend)
+        overrides.add("DOMAIN-SUFFIX,moved.example.com,DIRECT", placement: .prepend)
+
+        #expect(overrides.prepend == [
+            "DOMAIN-SUFFIX,moved.example.com,DIRECT",
+            "DOMAIN-SUFFIX,second.example.com,Proxy",
+            "DOMAIN-SUFFIX,first.example.com,Proxy"
+        ])
+        #expect(overrides.append.isEmpty)
+    }
+
+    @Test func ruleOverrideReplaceDeletesSourceRuleAndPrependsReplacement() {
+        var overrides = RuleOverrideSet()
+
+        overrides.replace(
+            "DOMAIN-SUFFIX,old.example.com,DIRECT",
+            with: "DOMAIN-SUFFIX,new.example.com,Proxy"
+        )
+
+        #expect(overrides.prepend == ["DOMAIN-SUFFIX,new.example.com,Proxy"])
+        #expect(overrides.delete == ["DOMAIN-SUFFIX,old.example.com,DIRECT"])
+    }
+
+    @Test func ruleTextValidationAcceptsMatchAndRejectsIncompleteRules() {
+        #expect(RuleOverrideSet.isValidRuleText("MATCH,DIRECT"))
+        #expect(RuleOverrideSet.isValidRuleText("DOMAIN-SUFFIX,example.com,Proxy"))
+        #expect(!RuleOverrideSet.isValidRuleText("MATCH,"))
+        #expect(!RuleOverrideSet.isValidRuleText("DOMAIN-SUFFIX,,Proxy"))
+        #expect(!RuleOverrideSet.isValidRuleText("DOMAIN-SUFFIX,example.com,"))
+    }
+
     @Test func ruleOverrideDraftBuildsStructuredRuleText() {
         let domainRule = RuleOverrideDraft(
             type: "DOMAIN-SUFFIX",
