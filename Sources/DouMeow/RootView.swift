@@ -2442,8 +2442,7 @@ private struct NetworkManageCard: View {
         guard subscription.total > 0 else {
             return "已使用 \(formatByteCount(subscription.used))"
         }
-        let percentage = Int((subscription.progress ?? 0) * 100)
-        return "\(formatByteCount(subscription.used)) / \(formatByteCount(subscription.total)) · \(percentage)%"
+        return "已使用 \(formatByteCount(subscription.used))"
     }
 
     private var footerText: String {
@@ -2464,53 +2463,30 @@ private struct NetworkManageCard: View {
         return formatter
     }()
 
-    private var usageIcon: String {
-        subscription == nil ? "chart.bar.xaxis" : "chart.line.uptrend.xyaxis"
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 13) {
-                    HStack(spacing: 12) {
-                        Image(systemName: "archivebox")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(DouMeowPalette.muted)
-                            .frame(width: 40, height: 40)
-                            .background(Color(hex: 0xF7FAFC), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack(spacing: 8) {
-                                Text(state.currentProfileName)
-                                    .font(.system(size: 16, weight: .bold))
-                                Text("YAML")
-                                    .font(.system(size: 9, weight: .bold))
-                                    .foregroundStyle(DouMeowPalette.muted)
-                                    .padding(.horizontal, 6)
-                                    .frame(height: 18)
-                                    .background(Color(hex: 0xF0F2F7), in: Capsule())
-                            }
-                            Text(usageTitle)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(DouMeowPalette.muted)
-                        }
-                    }
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "archivebox")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 34, height: 34)
+                    .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(primaryUsageText)
-                                .font(.system(
-                                    size: subscription == nil ? 21 : 23,
-                                    weight: subscription == nil ? .medium : .bold
-                                ))
-                                .foregroundStyle(subscription == nil ? Color.secondary : Color.primary)
-                            Text(secondaryUsageText)
-                                .font(.system(size: 21, weight: .medium))
-                                .foregroundStyle(.secondary)
-                        }
-                        Label(usageDetailText, systemImage: usageIcon)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(DouMeowPalette.muted)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 7) {
+                        Text(state.currentProfileName)
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                        Text("YAML")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.secondary.opacity(0.08), in: Capsule())
                     }
+                    Text(usageTitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Spacer()
@@ -2518,20 +2494,60 @@ private struct NetworkManageCard: View {
                 CorePowerSwitch()
             }
 
-            if let progress = subscription?.progress {
-                GradientProgressBar(progress: progress)
+            if let subscription {
+                HStack(alignment: .lastTextBaseline) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("已使用")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(formatByteCount(subscription.used))
+                            .font(.title2.weight(.semibold))
+                            .monospacedDigit()
+                            .foregroundStyle(.primary)
+                    }
+
+                    Spacer()
+
+                    if subscription.total > 0 {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("\(Int((subscription.progress ?? 0) * 100))%")
+                                .font(.headline.weight(.semibold))
+                                .monospacedDigit()
+                            Text("共 \(formatByteCount(subscription.total))")
+                                .font(.caption)
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Text("总量未提供")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                ProgressView(value: subscription.progress ?? 0)
+                    .progressViewStyle(.linear)
+                    .tint(DouMeowPalette.accent)
+                    .accessibilityLabel("远程配置用量")
+                    .accessibilityValue(usageDetailText)
             } else {
-                EmptyProgressBar()
+                Label(usageDetailText, systemImage: "chart.bar.xaxis")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+
+                ProgressView(value: 0)
+                    .progressViewStyle(.linear)
+                    .tint(DouMeowPalette.accent)
+                    .accessibilityLabel("远程配置用量未提供")
             }
 
-            HStack(spacing: 12) {
-                Image(systemName: "clock")
-                    .foregroundStyle(.secondary)
-                Text(footerText)
-                    .font(.system(size: 13, weight: .medium))
+            HStack(spacing: 10) {
+                Label(footerText, systemImage: "clock")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                HStack(alignment: .center, spacing: 12) {
+                HStack(spacing: 8) {
                     FooterActionButton(title: "刷新", systemImage: "arrow.clockwise") {
                         Task { await state.refresh() }
                     }
@@ -2540,23 +2556,11 @@ private struct NetworkManageCard: View {
                         openProfiles()
                     }
                 }
-                .frame(minWidth: 128, alignment: .trailing)
             }
         }
-        .padding(22)
-        .frame(minHeight: 178)
+        .padding(20)
+        .frame(minHeight: 174)
         .surfaceCard()
-    }
-
-    private var primaryUsageText: String {
-        guard let subscription else { return "暂无" }
-        return formatByteCount(subscription.used)
-    }
-
-    private var secondaryUsageText: String {
-        guard let subscription else { return "/ 无流量信息" }
-        guard subscription.total > 0 else { return "/ 未提供总量" }
-        return "/ \(formatByteCount(subscription.total))"
     }
 }
 
@@ -2567,19 +2571,10 @@ private struct FooterActionButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .center, spacing: 4) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 11, weight: .semibold))
-                    .frame(width: 13, height: 13, alignment: .center)
-                Text(title)
-                    .font(.system(size: 12, weight: .medium))
-            }
-            .foregroundStyle(.secondary)
-            .frame(height: 22, alignment: .center)
-            .contentShape(Rectangle())
+            Label(title, systemImage: systemImage)
         }
-        .buttonStyle(.plain)
-        .fixedSize()
+        .buttonStyle(.borderless)
+        .controlSize(.small)
     }
 }
 
@@ -2600,7 +2595,7 @@ private struct CorePowerSwitch: View {
     }
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 8) {
+        VStack(alignment: .trailing, spacing: 5) {
             Toggle("内核总开关", isOn: Binding(
                 get: {
                     switch state.core.status {
@@ -2616,6 +2611,7 @@ private struct CorePowerSwitch: View {
             ))
             .toggleStyle(.switch)
             .tint(DouMeowPalette.accent)
+            .controlSize(.small)
             .labelsHidden()
             .disabled(state.core.status == .starting)
             .help(state.core.status.isHealthy ? "内核总开关：停止内核" : "内核总开关：启动内核")
@@ -2623,10 +2619,10 @@ private struct CorePowerSwitch: View {
             HStack(spacing: 6) {
                 Circle()
                     .fill(statusColor)
-                    .frame(width: 7, height: 7)
+                    .frame(width: 6, height: 6)
                 Text(state.core.status.title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(DouMeowPalette.muted)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }
