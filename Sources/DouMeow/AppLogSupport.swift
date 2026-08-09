@@ -102,6 +102,9 @@ enum AppLogSupport {
             time: LogTimeSupport.displayString(from: timestamp),
             source: .app
         )
+        #if DEBUG
+        print(entry.rawText)
+        #endif
         publish(entry)
         writer.append(line, logsDirectory: logsDirectory)
     }

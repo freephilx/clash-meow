@@ -223,6 +223,7 @@ enum RuntimeConfigBuilder {
         "mode",
         "allow-lan",
         "log-level",
+        "find-process-mode",
         "tun",
         "dns",
         "sniffer"
@@ -270,7 +271,8 @@ enum RuntimeConfigBuilder {
             "mixed-port": settings.mixedPort ?? profileConfig.mixedPort ?? 7890,
             "mode": settings.mode.mihomoValue,
             "allow-lan": settings.allowLan,
-            "log-level": settings.logLevel
+            "log-level": settings.logLevel,
+            "find-process-mode": "always"
         ]
 
         if let tunEnabled = settings.tunEnabled {

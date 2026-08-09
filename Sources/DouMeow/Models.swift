@@ -458,6 +458,7 @@ struct OverviewProxyNode: Equatable, Identifiable {
     let node: ProxyNodeInfo
     let isSelected: Bool
     let delay: Int?
+    let alive: Bool?
 
     var id: String {
         "\(node.id)-\(isSelected ? "selected" : "ranked")"
@@ -471,7 +472,13 @@ struct OverviewProxyNode: Equatable, Identifiable {
     }
 
     var delayText: String? {
-        delay.map { "\($0) ms" }
+        if let delay {
+            return "\(delay) ms"
+        }
+        if alive == false {
+            return "超时"
+        }
+        return nil
     }
 }
 

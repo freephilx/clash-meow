@@ -53,6 +53,7 @@ final class AppState: ObservableObject {
     @Published var profiles: [DouMeowProfileSummary] = []
     @Published var toast: AppToast?
     @Published var isImportingProfile = false
+    @Published private(set) var isApplyingSystemProxyUpdate = false
     @Published private(set) var isApplyingTunUpdate = false
     @Published var refreshingProfileIDs = Set<String>()
     @Published var forwardingMode: MihomoMode
@@ -76,6 +77,7 @@ final class AppState: ObservableObject {
     private var modeUpdateTask: Task<Void, Never>?
     private var allowLanUpdateTask: Task<Void, Never>?
     private var systemProxyUpdateTask: Task<Void, Never>?
+    private var systemProxyUpdateGeneration = UUID()
     private var tunUpdateTask: Task<Void, Never>?
     private var toastDismissTask: Task<Void, Never>?
     private var trafficStreamTask: Task<Void, Never>?
@@ -89,6 +91,7 @@ final class AppState: ObservableObject {
     private var suppressModeDriftSync = false
     private var cancellables = Set<AnyCancellable>()
     #if DEBUG
+    private var systemProxyApplyForTesting: ((Bool) async throws -> Void)?
     private var tunRestartForTesting: (() async throws -> Void)?
     #endif
 
@@ -296,7 +299,8 @@ final class AppState: ObservableObject {
                 OverviewProxyNode(
                     node: ProxyNodeInfo(name: "DIRECT", type: "direct", server: nil, port: nil),
                     isSelected: true,
-                    delay: nil
+                    delay: nil,
+                    alive: nil
                 )
             ]
         }
@@ -312,11 +316,13 @@ final class AppState: ObservableObject {
         var result: [OverviewProxyNode] = []
 
         if selectedName != "-", selectedName.caseInsensitiveCompare("DIRECT") != .orderedSame, let selectedNode = nodeByName[selectedName] {
+            let status = statuses[selectedName]
             result.append(
                 OverviewProxyNode(
                     node: selectedNode,
                     isSelected: true,
-                    delay: validDelay(statuses[selectedName]?.delay)
+                    delay: validDelay(status?.delay),
+                    alive: status?.alive
                 )
             )
         }
@@ -332,11 +338,13 @@ final class AppState: ObservableObject {
                 return left.name.localizedStandardCompare(right.name) == .orderedAscending
             }
             .prefix(max(0, 3 - result.count))
-            .map {
-                OverviewProxyNode(
-                    node: $0,
+            .map { node in
+                let status = statuses[node.name]
+                return OverviewProxyNode(
+                    node: node,
                     isSelected: false,
-                    delay: validDelay(statuses[$0.name]?.delay)
+                    delay: validDelay(status?.delay),
+                    alive: status?.alive
                 )
             }
 
@@ -365,6 +373,10 @@ final class AppState: ObservableObject {
     }
 
     #if DEBUG
+    internal func setSystemProxyApplyForTesting(_ apply: ((Bool) async throws -> Void)?) {
+        systemProxyApplyForTesting = apply
+    }
+
     internal func setTunRestartForTesting(_ restart: (() async throws -> Void)?) {
         tunRestartForTesting = restart
     }
@@ -383,7 +395,9 @@ final class AppState: ObservableObject {
     }
 
     var mixedPort: Int {
-        displayedConfig?.mixedPort ?? 7890
+        Self.validListeningPort(activeProfileConfig?.mixedPort)
+            ?? Self.validListeningPort(config?.mixedPort)
+            ?? 7890
     }
 
     var controllerPort: Int {
@@ -478,7 +492,12 @@ final class AppState: ObservableObject {
     }
 
     var systemProxyPort: Int {
-        config?.mixedPort ?? activeProfileConfig?.mixedPort ?? 7890
+        mixedPort
+    }
+
+    private static func validListeningPort(_ port: Int?) -> Int? {
+        guard let port, (1...65535).contains(port) else { return nil }
+        return port
     }
 
     var coreSubtitle: String {
@@ -633,6 +652,8 @@ final class AppState: ObservableObject {
         allowLanUpdateTask = nil
         systemProxyUpdateTask?.cancel()
         systemProxyUpdateTask = nil
+        systemProxyUpdateGeneration = UUID()
+        isApplyingSystemProxyUpdate = false
         tunUpdateTask?.cancel()
         tunUpdateTask = nil
         toastDismissTask?.cancel()
@@ -966,6 +987,10 @@ final class AppState: ObservableObject {
         let previousPreference = SystemProxyPreference.isEnabled
         let previousUserPreference = SystemProxyUserPreference.isEnabled
         let previousToggle = previousEnabled
+        if isApplyingSystemProxyUpdate, recordPreference {
+            showToast("系统代理正在应用，请稍后再试")
+            return
+        }
         if isEnabled, !core.status.isHealthy {
             showToast("请先启动内核")
             systemProxyEnabled = previousEnabled
@@ -983,8 +1008,17 @@ final class AppState: ObservableObject {
         }
 
         systemProxyUpdateTask?.cancel()
+        systemProxyUpdateGeneration = UUID()
+        let generation = systemProxyUpdateGeneration
+        isApplyingSystemProxyUpdate = true
         systemProxyUpdateTask = Task { [weak self] in
             guard let self else { return }
+            defer {
+                if systemProxyUpdateGeneration == generation {
+                    isApplyingSystemProxyUpdate = false
+                    systemProxyUpdateTask = nil
+                }
+            }
             do {
                 try await self.applySystemProxy(isEnabled)
                 SystemProxyPreference.setEnabled(isEnabled)
@@ -1107,6 +1141,12 @@ final class AppState: ObservableObject {
     }
 
     private func applySystemProxy(_ isEnabled: Bool) async throws {
+        #if DEBUG
+        if let systemProxyApplyForTesting {
+            try await systemProxyApplyForTesting(isEnabled)
+            return
+        }
+        #endif
         let savedService = AppPreferenceStore.string(\.systemProxyNetworkService)
         let configuration = try systemProxyController.resolvedConfiguration(
             port: systemProxyPort,
@@ -1126,6 +1166,8 @@ final class AppState: ObservableObject {
             try? systemProxyController.setEnabled(false, configuration: configuration)
         }
         systemProxyEnabled = false
+        systemProxyUpdateGeneration = UUID()
+        isApplyingSystemProxyUpdate = false
         SystemProxyPreference.setEnabled(false)
     }
 

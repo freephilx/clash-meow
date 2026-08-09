@@ -71,6 +71,20 @@ struct MihomoYAMLSettingsTests {
         #expect(!runtimeYAML.contains("mixed-port: 7890"))
     }
 
+    @Test func runtimeBuilderUsesAppManagedFindProcessMode() throws {
+        let profileYAML = """
+        find-process-mode: off
+        proxies: []
+        rules:
+          - MATCH,DIRECT
+        """
+
+        let runtimeYAML = try RuntimeConfigBuilder.build(profileYAML: profileYAML)
+
+        #expect(runtimeYAML.contains("find-process-mode: always"))
+        #expect(!runtimeYAML.contains("find-process-mode: false"))
+    }
+
     @Test func runtimeBuilderAppliesRuleOverrides() throws {
         let profileYAML = """
         mixed-port: 7891

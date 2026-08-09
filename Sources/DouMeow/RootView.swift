@@ -7,6 +7,7 @@ private enum DouMeowPalette {
     static let orange = Color(hex: 0xFF9E14)
     static let ink = Color(hex: 0x1A1F26)
     static let muted = Color(hex: 0x94A1B3)
+    static let dashboardSecondary = Color(hex: 0x667085)
     static let faintLine = Color(hex: 0xE0E8F0)
     static let page = Color(hex: 0xF2F5FA)
     static let sidebar = Color(hex: 0xF7FAFC)
@@ -60,7 +61,7 @@ struct RootView: View {
 
     private let sidebarGroups = [
         SidebarGroup(id: "daily", title: "常用", destinations: [.overview]),
-        SidebarGroup(id: "inspect", title: "翻墙", destinations: [.profiles, .proxies, .connections, .rules, .logs])
+        SidebarGroup(id: "inspect", title: "网络", destinations: [.profiles, .proxies, .connections, .rules, .logs])
     ]
 
     var body: some View {
@@ -86,8 +87,8 @@ struct RootView: View {
                     ForEach(sidebarGroups) { group in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(group.title)
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(DouMeowPalette.muted)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(DouMeowPalette.dashboardSecondary)
                                 .padding(.horizontal, 10)
                                 .padding(.bottom, 2)
 
@@ -104,8 +105,8 @@ struct RootView: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("工具")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(DouMeowPalette.muted)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(DouMeowPalette.dashboardSecondary)
                             .padding(.horizontal, 10)
                             .padding(.bottom, 2)
 
@@ -185,7 +186,7 @@ private struct SidebarSettingsRow: View {
                 Spacer(minLength: 0)
                 Text("⌘,")
                     .font(.system(size: 11))
-                    .foregroundStyle(DouMeowPalette.muted)
+                    .foregroundStyle(DouMeowPalette.dashboardSecondary)
             }
             .foregroundStyle(DouMeowPalette.ink)
             .padding(.horizontal, 10)
@@ -228,19 +229,39 @@ private struct SidebarDestinationRow: View {
 
 private struct PageScaffold<Content: View>: View {
     let title: String
+    let titleSize: CGFloat
+    let contentSpacing: CGFloat
+    let horizontalPadding: CGFloat
+    let verticalPadding: CGFloat
     @ViewBuilder let content: Content
+
+    init(
+        title: String,
+        titleSize: CGFloat = 34,
+        contentSpacing: CGFloat = 24,
+        horizontalPadding: CGFloat = 30,
+        verticalPadding: CGFloat = 28,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.titleSize = titleSize
+        self.contentSpacing = contentSpacing
+        self.horizontalPadding = horizontalPadding
+        self.verticalPadding = verticalPadding
+        self.content = content()
+    }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: contentSpacing) {
                 Text(title)
-                    .font(.system(size: 34, weight: .bold))
+                    .font(.system(size: titleSize, weight: .bold))
                     .foregroundStyle(DouMeowPalette.ink)
 
                 content
             }
-            .padding(.horizontal, 30)
-            .padding(.vertical, 28)
+            .padding(.horizontal, horizontalPadding)
+            .padding(.vertical, verticalPadding)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .navigationTitle("")
@@ -2417,52 +2438,86 @@ private struct SettingFactCard: View {
     }
 }
 
+private enum DashboardLayout {
+    static let cardMinimumHeight: CGFloat = 165
+}
+
 private struct DashboardContent: View {
     @EnvironmentObject private var state: AppState
     let openProfiles: () -> Void
     let openProxies: () -> Void
 
     var body: some View {
-        PageScaffold(title: "概览") {
+        PageScaffold(
+            title: "概览",
+            titleSize: 30,
+            contentSpacing: 20,
+            horizontalPadding: 28,
+            verticalPadding: 24
+        ) {
             VStack(alignment: .leading, spacing: 20) {
-                NetworkManageCard(openProfiles: openProfiles)
-
-                HStack(spacing: 24) {
-                    RouteModeCard()
-                    ProxyNodeCard(openProxies: openProxies)
-                }
-
-                HStack(spacing: 18) {
-                    let proxyToggle = state.toggles.first(where: { $0.id == "proxy" })
-                    let tunToggle = state.toggles.first(where: { $0.id == "tun" })
+                let networkCard = NetworkManageCard(openProfiles: openProfiles)
+                    .frame(maxWidth: .infinity)
+                let featureCards = HStack(alignment: .top, spacing: 18) {
                     FeatureCard(
                         title: "系统代理",
-                        subtitle: "大多数应用的流量可以通过系统代理设置接管，兼容性和性能更稳定。",
-                        stateText: state.systemProxyEnabled ? "已设置" : "未设置",
-                        stateColor: state.systemProxyEnabled ? DouMeowPalette.accent : DouMeowPalette.orange,
-                        isOn: proxyToggle?.isOn == true,
+                        subtitle: "将系统代理指向 127.0.0.1:\(state.systemProxyPort)",
+                        stateText: state.isApplyingSystemProxyUpdate
+                            ? (state.systemProxyEnabled ? "开启中" : "关闭中")
+                            : (state.systemProxyEnabled ? "已开启" : "已关闭"),
+                        stateColor: state.systemProxyEnabled ? DouMeowPalette.accent : DouMeowPalette.muted,
+                        isOn: state.systemProxyEnabled,
                         actionImage: nil,
-                        onToggle: { isOn in
-                            if let proxyToggle {
-                                state.setToggle(proxyToggle, isOn: isOn)
-                            }
-                        }
+                        isCompact: true,
+                        minimumHeight: DashboardLayout.cardMinimumHeight,
+                        isDisabled: state.isApplyingSystemProxyUpdate
+                            || (!state.core.status.isHealthy && !state.systemProxyEnabled),
+                        onToggle: { state.setSystemProxyEnabled($0) }
                     )
+                    .frame(maxWidth: .infinity)
 
                     FeatureCard(
                         title: "增强模式",
-                        subtitle: "未遵循系统代理的应用可经由 TUN 或规则引擎接管，保持所有流量由 \(AppInfo.displayName) 路由。",
-                        stateText: state.isApplyingTunUpdate ? "应用中" : (state.isTunEnabled ? "已启用" : "已禁用"),
-                        stateColor: state.isTunEnabled ? DouMeowPalette.accent : DouMeowPalette.orange,
+                        subtitle: "接管不遵循系统代理的应用流量",
+                        stateText: state.isApplyingTunUpdate
+                            ? (state.isTunEnabled ? "开启中" : "关闭中")
+                            : (state.isTunEnabled ? "已开启" : "已关闭"),
+                        stateColor: state.isTunEnabled ? DouMeowPalette.accent : DouMeowPalette.muted,
                         isOn: state.isTunEnabled,
                         actionImage: nil,
-                        isDisabled: state.isApplyingTunUpdate,
-                        onToggle: { isOn in
-                            if let tunToggle {
-                                state.setToggle(tunToggle, isOn: isOn)
-                            }
-                        }
+                        isCompact: true,
+                        minimumHeight: DashboardLayout.cardMinimumHeight,
+                        isDisabled: state.isApplyingTunUpdate || !state.core.status.isHealthy,
+                        onToggle: { state.setTunEnabled($0) }
                     )
+                    .frame(maxWidth: .infinity)
+                }
+                .frame(maxWidth: .infinity)
+
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 18) {
+                        networkCard
+                        featureCards
+                    }
+                    .frame(minWidth: 720)
+
+                    VStack(spacing: 20) {
+                        networkCard
+                        featureCards
+                    }
+                }
+
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 18) {
+                        RouteModeCard()
+                        ProxyNodeCard(openProxies: openProxies)
+                    }
+                    .frame(minWidth: 620)
+
+                    VStack(spacing: 20) {
+                        RouteModeCard()
+                        ProxyNodeCard(openProxies: openProxies)
+                    }
                 }
 
                 ActivityGrid()
@@ -3078,14 +3133,14 @@ private struct NetworkManageCard: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(state.currentProfileName)
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(DouMeowPalette.ink)
                         .lineLimit(1)
 
                     if let summary = currentProfileSummary {
                         Text(summary.detailText)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(DouMeowPalette.muted)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(DouMeowPalette.dashboardSecondary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
                     }
@@ -3101,7 +3156,7 @@ private struct NetworkManageCard: View {
                     Text(usageDetailText)
                         .font(.system(size: 12, weight: .semibold))
                         .monospacedDigit()
-                        .foregroundStyle(DouMeowPalette.muted)
+                        .foregroundStyle(DouMeowPalette.dashboardSecondary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
 
@@ -3113,7 +3168,7 @@ private struct NetworkManageCard: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Label(usageDetailText, systemImage: "chart.bar.xaxis")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(DouMeowPalette.muted)
+                        .foregroundStyle(DouMeowPalette.dashboardSecondary)
 
                     EmptyProgressBar()
                         .accessibilityLabel("远程配置用量未提供")
@@ -3122,8 +3177,10 @@ private struct NetworkManageCard: View {
 
             HStack(spacing: 12) {
                 Label(footerText, systemImage: "clock")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(DouMeowPalette.muted)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(DouMeowPalette.dashboardSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 Spacer()
                 HStack(alignment: .center, spacing: 10) {
                     FooterActionButton(
@@ -3143,9 +3200,10 @@ private struct NetworkManageCard: View {
                 }
             }
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, minHeight: 156, alignment: .topLeading)
-        .surfaceCard()
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity, minHeight: DashboardLayout.cardMinimumHeight, alignment: .topLeading)
+        .surfaceCard(cornerRadius: 12)
     }
 }
 
@@ -3165,19 +3223,19 @@ private struct FooterActionButton: View {
                             .controlSize(.mini)
                     } else {
                         Image(systemName: systemImage)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                     }
                 }
                 .frame(width: 14, height: 14, alignment: .center)
                 Text(title)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .frame(height: 14, alignment: .center)
             }
             .frame(height: 16, alignment: .center)
         }
         .buttonStyle(.borderless)
         .controlSize(.small)
-        .foregroundStyle(DouMeowPalette.muted)
+        .foregroundStyle(DouMeowPalette.dashboardSecondary)
         .disabled(isDisabled || isLoading)
         .accessibilityLabel(isLoading ? "\(title)，正在加载" : title)
     }
@@ -3195,7 +3253,7 @@ private struct CorePowerSwitch: View {
         case .failed, .missingBinary:
             Color.red
         case .stopped:
-            DouMeowPalette.muted
+            DouMeowPalette.dashboardSecondary
         }
     }
 
@@ -3216,7 +3274,6 @@ private struct CorePowerSwitch: View {
             ))
             .toggleStyle(.switch)
             .tint(DouMeowPalette.accent)
-            .controlSize(.small)
             .labelsHidden()
             .disabled(state.core.status == .starting)
             .help(state.core.status.isHealthy ? "内核总开关：停止内核" : "内核总开关：启动内核")
@@ -3224,10 +3281,10 @@ private struct CorePowerSwitch: View {
             HStack(spacing: 6) {
                 Circle()
                     .fill(statusColor)
-                    .frame(width: 6, height: 6)
+                    .frame(width: 8, height: 8)
                 Text(state.core.status.title)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(DouMeowPalette.muted)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(DouMeowPalette.dashboardSecondary)
             }
         }
     }
@@ -3281,37 +3338,32 @@ private struct RouteModeCard: View {
     @EnvironmentObject private var state: AppState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("出口模式")
-                    .font(.system(size: 16, weight: .bold))
-                Text("选择当前网络流量的处理策略")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(DouMeowPalette.muted)
-            }
+        VStack(alignment: .leading, spacing: 10) {
+            Text("出口模式")
+                .font(.system(size: 15, weight: .semibold))
 
-            VStack(spacing: 14) {
-                RouteModeRow(label: "RULE", title: "规则", subtitle: MihomoMode.rule.detail, selected: state.effectiveForwardingMode == .rule) {
+            VStack(spacing: 10) {
+                RouteModeRow(label: "RULE", title: "规则", selected: state.effectiveForwardingMode == .rule) {
                     state.setForwardingMode(.rule)
                 }
-                RouteModeRow(label: "ALL", title: "全局", subtitle: MihomoMode.global.detail, selected: state.effectiveForwardingMode == .global) {
+                RouteModeRow(label: "ALL", title: "全局", selected: state.effectiveForwardingMode == .global) {
                     state.setForwardingMode(.global)
                 }
-                RouteModeRow(label: "DIR", title: "直连", subtitle: MihomoMode.direct.detail, selected: state.effectiveForwardingMode == .direct) {
+                RouteModeRow(label: "DIR", title: "直连", selected: state.effectiveForwardingMode == .direct) {
                     state.setForwardingMode(.direct)
                 }
             }
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, minHeight: 212, alignment: .topLeading)
-        .surfaceCard()
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, minHeight: DashboardLayout.cardMinimumHeight, alignment: .topLeading)
+        .surfaceCard(cornerRadius: 12)
     }
 }
 
 private struct RouteModeRow: View {
     let label: String
     let title: String
-    let subtitle: String
     let selected: Bool
     let action: () -> Void
 
@@ -3319,19 +3371,14 @@ private struct RouteModeRow: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Text(label)
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(selected ? DouMeowPalette.accent : DouMeowPalette.muted)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(selected ? DouMeowPalette.accent : DouMeowPalette.dashboardSecondary)
                     .frame(width: 34, height: 26)
-                    .background((selected ? DouMeowPalette.accent : DouMeowPalette.muted).opacity(0.09), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .background((selected ? DouMeowPalette.accent : DouMeowPalette.dashboardSecondary).opacity(0.09), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(DouMeowPalette.ink)
-                    Text(subtitle)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(DouMeowPalette.muted)
-                }
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(DouMeowPalette.ink)
 
                 Spacer()
 
@@ -3354,34 +3401,29 @@ private struct ProxyNodeCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("配置节点")
-                        .font(.system(size: 16, weight: .bold))
-                    Text("当前选择与低延迟服务器")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(DouMeowPalette.muted)
-                }
+                Text("配置节点")
+                    .font(.system(size: 15, weight: .semibold))
                 Spacer()
                 Button("查看全部", action: openProxies)
                     .buttonStyle(.plain)
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(DouMeowPalette.accent)
             }
 
-            VStack(spacing: 16) {
+            VStack(spacing: 10) {
                 if nodes.isEmpty {
                     HStack(spacing: 10) {
                         Image(systemName: "server.rack")
-                            .foregroundStyle(DouMeowPalette.muted)
+                            .foregroundStyle(DouMeowPalette.dashboardSecondary)
                         Text("当前配置未声明 proxies 节点")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(DouMeowPalette.muted)
+                            .foregroundStyle(DouMeowPalette.dashboardSecondary)
                     }
                     .frame(maxWidth: .infinity, minHeight: 86, alignment: .center)
                 } else {
-                    ForEach(Array(nodes.enumerated()), id: \.element.id) { index, item in
+                    ForEach(nodes) { item in
                         Button {
                             Task {
                                 if let group = state.primaryProxyGroup {
@@ -3391,25 +3433,22 @@ private struct ProxyNodeCard: View {
                         } label: {
                             HStack(spacing: 12) {
                                 Text(item.node.typeLabel.prefix(3))
-                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(DouMeowPalette.muted)
+                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(DouMeowPalette.dashboardSecondary)
                                     .frame(width: 30, height: 24)
                                     .background(Color(hex: 0xF0F2F7), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.node.displayName)
-                                        .font(.system(size: 13, weight: .bold))
-                                        .foregroundStyle(DouMeowPalette.ink)
-                                        .lineLimit(1)
-                                    if !item.detailText.isEmpty {
-                                        Text(item.detailText)
-                                            .font(.system(size: 11, weight: .bold))
-                                            .foregroundStyle(item.isSelected ? DouMeowPalette.accent : DouMeowPalette.muted)
-                                            .lineLimit(1)
-                                    }
-                                }
+                                Text(item.node.displayName)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(DouMeowPalette.ink)
+                                    .lineLimit(1)
                                 Spacer()
+                                Text(item.delayText ?? "--")
+                                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                    .monospacedDigit()
+                                    .foregroundStyle(item.alive == false ? DouMeowPalette.orange : DouMeowPalette.dashboardSecondary)
+                                    .frame(width: 52, alignment: .trailing)
                                 Circle()
-                                    .fill(index == 0 ? DouMeowPalette.accent : DouMeowPalette.faintLine)
+                                    .fill(item.isSelected ? DouMeowPalette.accent : DouMeowPalette.faintLine)
                                     .frame(width: 7, height: 7)
                             }
                             .contentShape(Rectangle())
@@ -3419,9 +3458,10 @@ private struct ProxyNodeCard: View {
                 }
             }
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, minHeight: 212, alignment: .topLeading)
-        .surfaceCard()
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, minHeight: DashboardLayout.cardMinimumHeight, alignment: .topLeading)
+        .surfaceCard(cornerRadius: 12)
     }
 }
 
@@ -3432,39 +3472,50 @@ private struct FeatureCard: View {
     let stateColor: Color
     let isOn: Bool
     let actionImage: String?
+    var isCompact = false
+    var minimumHeight: CGFloat = 132
     var isDisabled = false
     let onToggle: (Bool) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 17) {
+        VStack(alignment: .leading, spacing: isCompact ? 12 : 17) {
             HStack(alignment: .top) {
                 Text(title)
-                    .font(.system(size: 17, weight: .bold))
+                    .font(.system(size: 15, weight: .semibold))
                 Spacer()
-                Toggle("", isOn: Binding(
-                    get: { isOn },
-                    set: { newValue in onToggle(newValue) }
-                ))
+                if isCompact {
+                    DashboardConnectionSwitch(isOn: isOn, isEnabled: !isDisabled) {
+                        onToggle(!isOn)
+                    }
+                    .accessibilityLabel(title)
+                    .accessibilityValue(stateText)
+                } else {
+                    Toggle("", isOn: Binding(
+                        get: { isOn },
+                        set: { newValue in onToggle(newValue) }
+                    ))
                     .toggleStyle(.switch)
                     .tint(DouMeowPalette.accent)
                     .labelsHidden()
                     .disabled(isDisabled)
+                }
             }
 
             Text(subtitle)
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 12))
+                .foregroundStyle(DouMeowPalette.dashboardSecondary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Spacer(minLength: 4)
+            Spacer(minLength: isCompact ? 0 : 4)
 
             HStack {
                 Circle()
                     .fill(stateColor)
-                    .frame(width: 10, height: 10)
+                    .frame(width: isCompact ? 7 : 8, height: isCompact ? 7 : 8)
                 Text(stateText)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(isOn ? DouMeowPalette.accent : DouMeowPalette.muted)
                 Spacer()
                 if let actionImage {
                     Image(systemName: actionImage)
@@ -3472,9 +3523,36 @@ private struct FeatureCard: View {
                 }
             }
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
-        .surfaceCard()
+        .padding(.horizontal, 20)
+        .padding(.vertical, isCompact ? 16 : 20)
+        .frame(maxWidth: .infinity, minHeight: minimumHeight, alignment: .topLeading)
+        .surfaceCard(cornerRadius: 12)
+    }
+}
+
+private struct DashboardConnectionSwitch: View {
+    let isOn: Bool
+    let isEnabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            ZStack(alignment: isOn ? .trailing : .leading) {
+                Capsule()
+                    .fill(isOn ? DouMeowPalette.accent : DouMeowPalette.faintLine)
+                    .frame(width: 48, height: 28)
+
+                Circle()
+                    .fill(.white)
+                    .frame(width: 20, height: 20)
+                    .padding(.horizontal, 4)
+                    .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.55)
     }
 }
 
@@ -3515,32 +3593,42 @@ private struct ActivityGrid: View {
     @State private var activityColumnHeight: CGFloat = 0
 
     var body: some View {
-        VStack(spacing: 24) {
-            HStack(spacing: 18) {
-                LatencyCard()
-                    .frame(maxWidth: .infinity)
-
-                HStack(spacing: 18) {
-                    ThroughputCard(
-                        title: "上传",
-                        value: formatByteCount(state.traffic.up),
-                        samples: state.uploadSparklineSamples,
-                        accent: DouMeowPalette.accent
-                    )
-                    .frame(maxWidth: .infinity)
-                    ThroughputCard(
-                        title: "下载",
-                        value: formatByteCount(state.traffic.down),
-                        samples: state.downloadSparklineSamples,
-                        accent: DouMeowPalette.accent
-                    )
-                    .frame(maxWidth: .infinity)
-                }
+        VStack(spacing: 20) {
+            let latencyCard = LatencyCard()
                 .frame(maxWidth: .infinity)
+            let throughputCards = HStack(spacing: 18) {
+                ThroughputCard(
+                    title: "上传",
+                    value: formatByteCount(state.traffic.up),
+                    samples: state.uploadSparklineSamples,
+                    accent: DouMeowPalette.accent
+                )
+                .frame(maxWidth: .infinity)
+                ThroughputCard(
+                    title: "下载",
+                    value: formatByteCount(state.traffic.down),
+                    samples: state.downloadSparklineSamples,
+                    accent: DouMeowPalette.accent
+                )
+                .frame(maxWidth: .infinity)
+            }
+            .frame(maxWidth: .infinity)
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 18) {
+                    latencyCard
+                    throughputCards
+                }
+                .frame(minWidth: 720)
+
+                VStack(spacing: 20) {
+                    latencyCard
+                    throughputCards
+                }
             }
 
             HStack(alignment: .top, spacing: 18) {
-                VStack(spacing: 24) {
+                VStack(spacing: 20) {
                     SummaryCard(
                         title: "活动连接",
                         value: state.connectionCountText,
@@ -3549,8 +3637,7 @@ private struct ActivityGrid: View {
                             ("设备", "—"),
                             ("DHCP 设备", "—")
                         ],
-                        statusColor: state.core.status.isHealthy ? DouMeowPalette.accent : DouMeowPalette.orange,
-                        todoDetailTitles: ["设备", "DHCP 设备"]
+                        statusColor: state.core.status.isHealthy ? DouMeowPalette.accent : DouMeowPalette.orange
                     )
                     TotalTrafficCard()
                 }
@@ -3571,10 +3658,10 @@ private struct LatencyCard: View {
     @State private var isShowingDiagnostics = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 6) {
                 Text("互联网延迟")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.system(size: 15, weight: .semibold))
                 if state.isDiagnosingInternetLatency {
                     ProgressView()
                         .controlSize(.small)
@@ -3602,21 +3689,22 @@ private struct LatencyCard: View {
             }
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(state.activityInternetLatencyText.replacingOccurrences(of: " ms", with: ""))
-                    .font(.system(size: 28, weight: .bold))
+                    .font(.system(size: 12, weight: .semibold))
                 Text("ms")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(size: 11, weight: .semibold))
             }
             HStack(spacing: 0) {
-                MiniMetric(title: "路由器", value: state.activityRouterLatencyText)
+                MiniMetric(title: "路由器", value: state.activityRouterLatencyText, leadingInset: 0)
                 Divider()
                 MiniMetric(title: "DNS", value: state.activityDNSLatencyText)
                 Divider()
                 MiniMetric(title: "当前节点", value: state.activitySelectedProxyDelayText)
             }
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, minHeight: 142, alignment: .topLeading)
-        .surfaceCard()
+        .padding(.horizontal, 20)
+        .padding(.vertical, 18)
+        .frame(maxWidth: .infinity, minHeight: DashboardLayout.cardMinimumHeight, alignment: .topLeading)
+        .surfaceCard(cornerRadius: 12)
         .task {
             await state.diagnoseInternetLatencyIfNeeded()
         }
@@ -3932,20 +4020,21 @@ private struct ThroughputCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(title)
-                .font(.system(size: 14, weight: .bold))
+                .font(.system(size: 15, weight: .semibold))
             HStack(alignment: .firstTextBaseline, spacing: 7) {
                 Text(value)
-                    .font(.system(size: 28, weight: .bold))
+                    .font(.system(size: 12, weight: .semibold))
                 Text("/s")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(size: 11, weight: .semibold))
             }
             Spacer()
             Sparkline(samples: samples, accent: accent)
                 .frame(height: 34)
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, minHeight: 142, alignment: .topLeading)
-        .surfaceCard()
+        .padding(.horizontal, 20)
+        .padding(.vertical, 18)
+        .frame(maxWidth: .infinity, minHeight: DashboardLayout.cardMinimumHeight, alignment: .topLeading)
+        .surfaceCard(cornerRadius: 12)
     }
 }
 
@@ -3954,36 +4043,33 @@ private struct SummaryCard: View {
     let value: String
     let details: [(String, String)]
     let statusColor: Color
-    var todoDetailTitles: Set<String> = []
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text(title)
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.system(size: 15, weight: .semibold))
                 Spacer()
                 Circle()
                     .fill(statusColor)
-                    .frame(width: 11, height: 11)
+                    .frame(width: 8, height: 8)
             }
             Text(value)
-                .font(.system(size: 31, weight: .bold))
+                .font(.system(size: 12, weight: .semibold))
             HStack(spacing: 0) {
-                ForEach(details, id: \.0) { item in
-                    MiniMetric(
-                        title: item.0,
-                        value: item.1,
-                        showsTodo: todoDetailTitles.contains(item.0)
-                    )
-                    if item.0 != details.last?.0 {
+                ForEach(details.indices, id: \.self) { index in
+                    let item = details[index]
+                    MiniMetric(title: item.0, value: item.1, leadingInset: index == 0 ? 0 : 12)
+                    if index < details.count - 1 {
                         Divider()
                     }
                 }
             }
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, minHeight: 142, alignment: .topLeading)
-        .surfaceCard()
+        .padding(.horizontal, 20)
+        .padding(.vertical, 18)
+        .frame(maxWidth: .infinity, minHeight: DashboardLayout.cardMinimumHeight, alignment: .topLeading)
+        .surfaceCard(cornerRadius: 12)
     }
 }
 
@@ -3994,47 +4080,32 @@ private struct TotalTrafficCard: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
                 Text("总流量")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.system(size: 15, weight: .semibold))
                 Spacer()
                 Text("今日")
-                    .font(.system(size: 12, weight: .bold))
-                    .padding(.horizontal, 28)
+                    .font(.system(size: 12, weight: .semibold))
+                    .padding(.horizontal, 12)
                     .frame(height: 22)
-                    .foregroundStyle(DouMeowPalette.ink)
-                    .background(Color.white, in: Capsule())
-                HStack(spacing: 4) {
-                    Text("本月")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
-                    TodoBadge()
-                }
-                .padding(.horizontal, 12)
-                .frame(height: 22)
-                .background(Color(hex: 0xF0F2F7), in: Capsule())
+                    .foregroundStyle(DouMeowPalette.dashboardSecondary)
+                    .background(Color(hex: 0xF0F2F7), in: Capsule())
             }
             Text(formatByteCount(state.activityCumulativeTrafficTotal))
-                .font(.system(size: 31, weight: .bold))
+                .font(.system(size: 12, weight: .semibold))
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 4) {
-                        Text("直连")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                        TodoBadge()
-                    }
+                    Text("直连")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(DouMeowPalette.dashboardSecondary)
                     Text("—")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.system(size: 14, weight: .semibold))
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 3) {
-                    HStack(spacing: 4) {
-                        Text("节点")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                        TodoBadge()
-                    }
+                    Text("节点")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(DouMeowPalette.dashboardSecondary)
                     Text("—")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.system(size: 14, weight: .semibold))
                 }
             }
             HStack(spacing: 5) {
@@ -4043,19 +4114,17 @@ private struct TotalTrafficCard: View {
             }
             .frame(height: 9)
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, minHeight: 142, alignment: .topLeading)
-        .surfaceCard()
+        .padding(.horizontal, 20)
+        .padding(.vertical, 18)
+        .frame(maxWidth: .infinity, minHeight: DashboardLayout.cardMinimumHeight, alignment: .topLeading)
+        .surfaceCard(cornerRadius: 12)
     }
 }
 
 private struct TrafficListCard: View {
     @EnvironmentObject private var state: AppState
-    @State private var scopeIndex = 0
-    @State private var tabIndex = 0
 
     private var rows: [(String, String, Color)] {
-        guard tabIndex == 0 else { return [] }
         let liveRows = state.activityTrafficRows.prefix(5).map { row in
             (row.name, formatByteCount(row.bytes), DouMeowPalette.accent)
         }
@@ -4067,40 +4136,31 @@ private struct TrafficListCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("流量")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.system(size: 15, weight: .semibold))
                 Spacer()
-                SegmentedPill(labels: ["全部", "节点"], selection: $scopeIndex, todoIndices: [1])
+                Text("实时")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(DouMeowPalette.dashboardSecondary)
+                    .padding(.horizontal, 10)
+                    .frame(height: 22)
+                    .background(Color(hex: 0xF0F2F7), in: Capsule())
             }
 
             BarTimeline(samples: state.trafficHistory.map(\.total))
                 .frame(height: 54)
 
-            SegmentedPill(labels: ["客户端", "域名", "策略"], compact: true, selection: $tabIndex, todoIndices: [1, 2])
+            Label("客户端", systemImage: "desktopcomputer")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(DouMeowPalette.dashboardSecondary)
 
             Group {
-                if tabIndex != 0 {
-                    HStack(spacing: 6) {
-                        TodoBadge()
-                        Text("该维度统计尚未实现")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(DouMeowPalette.muted)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .center)
-                } else if scopeIndex == 1 {
-                    HStack(spacing: 6) {
-                        TodoBadge()
-                        Text("节点流量筛选尚未实现")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(DouMeowPalette.muted)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .center)
-                } else if rows.isEmpty {
+                if rows.isEmpty {
                     Text(state.core.status.isHealthy ? "暂无客户端流量数据" : "启动内核后可查看流量统计")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(DouMeowPalette.muted)
+                        .foregroundStyle(DouMeowPalette.dashboardSecondary)
                         .frame(maxWidth: .infinity, alignment: .center)
                 } else {
                     VStack(spacing: 10) {
@@ -4112,43 +4172,29 @@ private struct TrafficListCard: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .padding(20)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 18)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .surfaceCard()
+        .surfaceCard(cornerRadius: 12)
     }
 }
 
 private struct MiniMetric: View {
     let title: String
     let value: String
-    var showsTodo = false
+    var leadingInset: CGFloat = 12
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 4) {
-                Text(title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                if showsTodo {
-                    TodoBadge()
-                }
-            }
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(DouMeowPalette.dashboardSecondary)
             Text(value)
-                .font(.system(size: 15, weight: .bold))
+                .font(.system(size: 14, weight: .semibold))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 14)
-    }
-}
-
-private struct TodoBadge: View {
-    var body: some View {
-        Text("TODO")
-            .font(.system(size: 9, weight: .bold, design: .monospaced))
-            .foregroundStyle(DouMeowPalette.orange)
-            .padding(.horizontal, 5)
-            .frame(height: 16)
-            .background(DouMeowPalette.orange.opacity(0.12), in: Capsule())
+        .padding(.leading, leadingInset)
+        .padding(.trailing, 12)
     }
 }
 
@@ -4235,39 +4281,6 @@ private struct BarTimeline: View {
     }
 }
 
-private struct SegmentedPill: View {
-    let labels: [String]
-    var compact = false
-    @Binding var selection: Int
-    var todoIndices: Set<Int> = []
-
-    var body: some View {
-        HStack(spacing: 0) {
-            ForEach(Array(labels.enumerated()), id: \.offset) { index, label in
-                Button {
-                    selection = index
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(label)
-                        if todoIndices.contains(index) {
-                            TodoBadge()
-                        }
-                    }
-                    .font(.system(size: compact ? 11 : 12, weight: selection == index ? .bold : .medium))
-                    .foregroundStyle(selection == index ? DouMeowPalette.ink : DouMeowPalette.muted)
-                    .frame(minWidth: compact ? 70 : 58)
-                    .frame(height: compact ? 20 : 22)
-                    .background(selection == index ? Color.white : Color.clear, in: Capsule())
-                    .shadow(color: selection == index ? .black.opacity(0.04) : .clear, radius: 2, x: 0, y: 1)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(2)
-        .background(Color(hex: 0xF0F2F7), in: Capsule())
-    }
-}
-
 private struct TrafficRow: View {
     let name: String
     let value: String
@@ -4284,7 +4297,7 @@ private struct TrafficRow: View {
                         .foregroundStyle(.white)
                 }
             Text(name)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)

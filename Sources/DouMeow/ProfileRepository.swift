@@ -293,9 +293,6 @@ struct ProfileRepository {
 
     private func logRuntimeConfig(_ message: String) {
         AppLogSupport.info(message, module: "RuntimeConfig", logsDirectory: logsDirectory)
-        #if DEBUG
-        print("[RuntimeConfig] \(message)")
-        #endif
     }
 
     private func runtimeYAML(for id: String) throws -> String {

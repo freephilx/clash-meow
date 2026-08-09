@@ -361,6 +361,8 @@ struct AppStateModeProxyTests {
         #expect(state.overviewProxyNodes.map(\.node.name) == ["Tokyo-01", "Los Angeles-03", "Singapore-02"])
         #expect(state.overviewProxyNodes.first?.isSelected == true)
         #expect(state.overviewProxyNodes[1].delay == 40)
+        #expect(state.overviewProxyNodes[2].alive == false)
+        #expect(state.overviewProxyNodes[2].delayText == "超时")
 
         state.forwardingMode = .global
         #expect(state.overviewProxyNodes.map(\.node.name) == ["Tokyo-01", "Los Angeles-03", "Singapore-02"])
@@ -527,6 +529,23 @@ struct AppStateModeProxyTests {
         #expect(state.systemProxyEnabled == true)
     }
 
+    @Test func systemProxyPortUsesValidRuntimeThenControllerThenDefault() {
+        let state = AppState()
+
+        state.activeProfileConfig = Self.config(mixedPort: 7890)
+        state.config = Self.config(mixedPort: 0)
+        #expect(state.mixedPort == 7890)
+        #expect(state.systemProxyPort == 7890)
+
+        state.activeProfileConfig = Self.config(mixedPort: nil)
+        state.config = Self.config(mixedPort: 7891)
+        #expect(state.systemProxyPort == 7891)
+
+        state.activeProfileConfig = Self.config(mixedPort: 65_536)
+        state.config = Self.config(mixedPort: 0)
+        #expect(state.systemProxyPort == 7890)
+    }
+
     @Test func enablingSystemProxyWhileCoreStoppedRollsBackPreference() {
         let originalPreference = SystemProxyPreference.isEnabled
         let originalUserPreference = SystemProxyUserPreference.isEnabled
@@ -546,6 +565,36 @@ struct AppStateModeProxyTests {
         #expect(state.toggles.first(where: { $0.id == "proxy" })?.isOn == false)
         #expect(state.systemProxyEnabled == false)
         #expect(state.toast?.message == "请先启动内核")
+    }
+
+    @Test func systemProxyUpdateIsSingleFlightAndPublishesOperationState() async throws {
+        let originalPreference = SystemProxyPreference.isEnabled
+        let originalUserPreference = SystemProxyUserPreference.isEnabled
+        defer {
+            SystemProxyPreference.setEnabled(originalPreference)
+            SystemProxyUserPreference.setEnabled(originalUserPreference)
+        }
+
+        SystemProxyPreference.setEnabled(false)
+        SystemProxyUserPreference.setEnabled(false)
+        let state = AppState()
+        state.core.applyDemoPresentation()
+        state.setSystemProxyApplyForTesting { _ in
+            try await Task.sleep(for: .milliseconds(80))
+        }
+
+        state.setSystemProxyEnabled(true)
+        #expect(state.systemProxyEnabled == true)
+        #expect(state.isApplyingSystemProxyUpdate == true)
+
+        state.setSystemProxyEnabled(false)
+        #expect(state.systemProxyEnabled == true)
+        #expect(state.toast?.message == "系统代理正在应用，请稍后再试")
+
+        try await Task.sleep(for: .milliseconds(120))
+        #expect(state.isApplyingSystemProxyUpdate == false)
+        #expect(SystemProxyPreference.isEnabled == true)
+        #expect(SystemProxyUserPreference.isEnabled == true)
     }
 
     @Test func enablingTunWhileCoreStoppedRollsBackPreference() {
@@ -1127,6 +1176,24 @@ struct AppStateModeProxyTests {
             .appending(path: "runtime", directoryHint: .isDirectory)
             .appending(path: "mihomo", directoryHint: .isDirectory)
             .appending(path: "config.yaml")
+    }
+
+    private static func config(mixedPort: Int?) -> MihomoConfig {
+        MihomoConfig(
+            port: nil,
+            socksPort: nil,
+            mixedPort: mixedPort,
+            redirPort: nil,
+            tproxyPort: nil,
+            mode: "rule",
+            logLevel: "info",
+            allowLan: false,
+            ipv6: false,
+            interfaceName: nil,
+            tun: nil,
+            externalController: "127.0.0.1:9090",
+            secret: nil
+        )
     }
 
     private static func mihomoConfigsURL(in rootDirectory: URL) -> URL {
