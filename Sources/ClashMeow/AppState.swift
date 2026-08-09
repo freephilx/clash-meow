@@ -832,10 +832,7 @@ final class AppState: ObservableObject {
                 proxyPort: useProxy ? mixedPort : nil
             )
             refreshProfiles()
-            updateActiveProfileFileMonitor()
-            loadActiveProfileSnapshot(resetRuntimeData: true)
-            core.releaseListeningPorts()
-            reloadCoreAfterProfileChange(toastMessage: "已导入 \(summary.name)")
+            showToast("已添加 \(summary.name)")
             addEvent(source: "Profile", title: "导入远程配置", detail: summary.name)
             return true
         } catch {
@@ -853,10 +850,7 @@ final class AppState: ObservableObject {
             suppressFileChangeNotifications()
             let summary = try profileRepository.importLocalProfile(from: url)
             refreshProfiles()
-            updateActiveProfileFileMonitor()
-            loadActiveProfileSnapshot(resetRuntimeData: true)
-            core.releaseListeningPorts()
-            reloadCoreAfterProfileChange(toastMessage: "已导入 \(summary.name)")
+            showToast("已添加 \(summary.name)")
             addEvent(source: "Profile", title: "导入本地配置", detail: summary.name)
             return true
         } catch {

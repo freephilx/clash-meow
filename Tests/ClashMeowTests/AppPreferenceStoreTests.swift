@@ -377,6 +377,68 @@ struct AppPreferenceStoreTests {
         }
     }
 
+    @Test func importingLocalProfileDoesNotSelectItOrRewriteRuntimeConfig() throws {
+        try AppPreferenceStoreTestIsolation.withTemporaryDirectory(prefix: "clash-meow-local-import") { directory in
+            let activeConfig = Self.runtimeConfigURL(in: directory)
+            let repository = ProfileRepository(configDirectory: directory, activeConfigFile: activeConfig)
+            _ = try repository.listProfiles()
+            try repository.restoreSelectedProfileIfNeeded()
+            let runtimeBeforeImport = try Data(contentsOf: activeConfig)
+
+            let importDirectory = directory.appending(path: "imports", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: importDirectory, withIntermediateDirectories: true)
+            let source = importDirectory.appending(path: "local-added.yaml")
+            try Self.profileYAML(groupName: "LocalAdded", mixedPort: 7891).write(
+                to: source,
+                atomically: true,
+                encoding: .utf8
+            )
+
+            let imported = try repository.importLocalProfile(from: source)
+
+            #expect(imported.name == "local-added")
+            #expect(imported.isCurrent == false)
+            #expect(AppPreferenceStore.readMihomoSettings().selectedProfileID == "default")
+            #expect(try Data(contentsOf: activeConfig) == runtimeBeforeImport)
+            #expect(try repository.listProfiles().first { $0.id == imported.id }?.isCurrent == false)
+        }
+    }
+
+    @Test func importingRemoteProfileDoesNotSelectItOrRewriteRuntimeConfig() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "clash-meow-remote-import-\(UUID().uuidString)", directoryHint: .isDirectory)
+        AppPreferenceStore.configDirectoryOverrideForTesting = directory
+        defer {
+            AppPreferenceStore.configDirectoryOverrideForTesting = nil
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockProfileImportURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let activeConfig = Self.runtimeConfigURL(in: directory)
+        let repository = ProfileRepository(
+            configDirectory: directory,
+            activeConfigFile: activeConfig,
+            urlSession: session
+        )
+        _ = try repository.listProfiles()
+        try repository.restoreSelectedProfileIfNeeded()
+        let runtimeBeforeImport = try Data(contentsOf: activeConfig)
+
+        let imported = try await repository.importRemoteProfile(
+            from: URL(string: "https://profiles.example/download")!,
+            useProxy: false,
+            proxyPort: nil
+        )
+
+        #expect(imported.name == "remote-added")
+        #expect(imported.isCurrent == false)
+        #expect(AppPreferenceStore.readMihomoSettings().selectedProfileID == "default")
+        #expect(try Data(contentsOf: activeConfig) == runtimeBeforeImport)
+        #expect(try repository.listProfiles().first { $0.id == imported.id }?.isCurrent == false)
+    }
+
     @Test func rootProfilesDirectoryIsIgnored() throws {
         try AppPreferenceStoreTestIsolation.withTemporaryDirectory(prefix: "clash-meow-profiles") { directory in
             let rootProfilesDirectory = directory.appending(path: "profiles", directoryHint: .isDirectory)
@@ -438,4 +500,42 @@ struct AppPreferenceStoreTests {
             .appending(path: "logs", directoryHint: .isDirectory)
             .appending(path: "app.log")
     }
+}
+
+private final class MockProfileImportURLProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url?.host == "profiles.example"
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        guard let client, let url = request.url else { return }
+        let yaml = """
+        mixed-port: 7892
+        proxy-groups:
+          - name: RemoteAdded
+            type: select
+            proxies:
+              - DIRECT
+        rules:
+          - MATCH,DIRECT
+        """
+        let response = HTTPURLResponse(
+            url: url,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: [
+                "Content-Type": "text/yaml",
+                "Content-Disposition": "attachment; filename=remote-added.yaml"
+            ]
+        )!
+        client.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client.urlProtocol(self, didLoad: Data(yaml.utf8))
+        client.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }

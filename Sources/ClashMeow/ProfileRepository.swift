@@ -53,8 +53,14 @@ struct ProfileRepository {
     private let mihomoConfigsDirectory: URL
     private let activeConfigFile: URL
     private let logsDirectory: URL
+    private let urlSession: URLSession?
 
-    init(configDirectory: URL, activeConfigFile: URL, logsDirectory: URL? = nil) {
+    init(
+        configDirectory: URL,
+        activeConfigFile: URL,
+        logsDirectory: URL? = nil,
+        urlSession: URLSession? = nil
+    ) {
         self.mihomoConfigsDirectory = configDirectory
             .appending(path: "configs", directoryHint: .isDirectory)
             .appending(path: "mihomo", directoryHint: .isDirectory)
@@ -63,6 +69,7 @@ struct ProfileRepository {
             ?? configDirectory
                 .appending(path: "runtime", directoryHint: .isDirectory)
                 .appending(path: "logs", directoryHint: .isDirectory)
+        self.urlSession = urlSession
     }
 
     func listProfiles() throws -> [ClashMeowProfileSummary] {
@@ -97,8 +104,7 @@ struct ProfileRepository {
             subscriptionUserInfo: nil
         )
         try saveMetadata(metadata)
-        try activateProfile(id: id)
-        return try summary(for: id, url: destination, metadata: metadata[id], currentID: id)
+        return try summary(for: id, url: destination, metadata: metadata[id], currentID: try currentProfileID())
     }
 
     @discardableResult
@@ -142,8 +148,7 @@ struct ProfileRepository {
             subscriptionUserInfo: document.subscriptionUserInfo
         )
         try saveMetadata(metadata)
-        try activateProfile(id: id)
-        return try summary(for: id, url: destination, metadata: metadata[id], currentID: id)
+        return try summary(for: id, url: destination, metadata: metadata[id], currentID: try currentProfileID())
     }
 
     @discardableResult
@@ -374,7 +379,7 @@ struct ProfileRepository {
             ]
         }
 
-        let session = URLSession(configuration: configuration)
+        let session = urlSession ?? URLSession(configuration: configuration)
         var bestDocument: (data: Data, response: URLResponse, yaml: String)?
         var bestProxyCount = -1
         var lastStatusCode: Int?

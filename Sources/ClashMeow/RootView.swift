@@ -1872,9 +1872,9 @@ private struct ProfilesContent: View {
 
                 if state.profiles.isEmpty {
                     ContentUnavailableView {
-                        Label("导入配置开始使用", systemImage: "rectangle.stack.badge.plus")
+                        Label("暂无配置", systemImage: "rectangle.stack.badge.plus")
                     } description: {
-                        Text("使用远程配置 URL 或本地 YAML。")
+                        Text("可添加远程配置 URL 或本地 YAML。")
                     } actions: {
                         Button("Import File…") {
                             isImportingFile = true
