@@ -3,7 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 private enum ClashMeowPalette {
-    static let purple = Color(hex: 0x00A52A)
+    static let accent = Color(hex: 0x00A52A)
     static let orange = Color(hex: 0xFF9E14)
     static let ink = Color(hex: 0x1A1F26)
     static let muted = Color(hex: 0x94A1B3)
@@ -201,7 +201,7 @@ private struct SidebarDestinationRow: View {
                     .font(.system(size: 14, weight: .semibold))
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(isSelected ? ClashMeowPalette.purple : ClashMeowPalette.ink)
+            .foregroundStyle(isSelected ? ClashMeowPalette.accent : ClashMeowPalette.ink)
             .padding(.horizontal, 10)
             .frame(height: 32)
             .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -245,7 +245,7 @@ private struct AppToastView: View {
         HStack(spacing: 8) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(ClashMeowPalette.purple)
+                .foregroundStyle(ClashMeowPalette.accent)
             Text(toast.message)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(ClashMeowPalette.ink)
@@ -451,7 +451,7 @@ private struct ProxyNodeSelectionDot: View {
 
     var body: some View {
         Circle()
-            .fill(isSelected ? ClashMeowPalette.purple : ClashMeowPalette.faintLine)
+            .fill(isSelected ? ClashMeowPalette.accent : ClashMeowPalette.faintLine)
             .frame(width: 7, height: 7)
             .frame(width: 18, height: 18)
             .accessibilityHidden(true)
@@ -489,13 +489,13 @@ private struct ProxyCard: View {
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity, minHeight: 68, alignment: .leading)
             .background(
-                isSelected ? ClashMeowPalette.purple.opacity(0.10) : Color.white,
+                isSelected ? ClashMeowPalette.accent.opacity(0.10) : Color.white,
                 in: RoundedRectangle(cornerRadius: 16, style: .continuous)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(
-                        isSelected ? ClashMeowPalette.purple.opacity(0.18) : ClashMeowPalette.faintLine.opacity(0.8),
+                        isSelected ? ClashMeowPalette.accent.opacity(0.18) : ClashMeowPalette.faintLine.opacity(0.8),
                         lineWidth: 1
                     )
             }
@@ -644,7 +644,7 @@ private struct ConnectionRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: connection.metadata?.network == "udp" ? "antenna.radiowaves.left.and.right" : "network")
-                .foregroundStyle(ClashMeowPalette.purple)
+                .foregroundStyle(ClashMeowPalette.accent)
                 .frame(width: 22)
 
             VStack(alignment: .leading, spacing: 4) {
@@ -792,7 +792,7 @@ private struct LogsContent: View {
                         RuleOptionButton(
                             title: item.title,
                             isSelected: source == item,
-                            color: ClashMeowPalette.purple
+                            color: ClashMeowPalette.accent
                         ) {
                             source = item
                         }
@@ -804,7 +804,7 @@ private struct LogsContent: View {
                         RuleOptionButton(
                             title: item.title,
                             isSelected: level == item,
-                            color: ClashMeowPalette.purple
+                            color: ClashMeowPalette.accent
                         ) {
                             level = item
                         }
@@ -968,7 +968,7 @@ private extension LogSourceFilter {
     var tintColor: Color {
         switch self {
         case .all: return ClashMeowPalette.muted
-        case .app: return ClashMeowPalette.purple
+        case .app: return ClashMeowPalette.accent
         case .core: return .indigo
         }
     }
@@ -980,14 +980,14 @@ private struct ClashMeowRoundedTextFieldStyle: TextFieldStyle {
     func _body(configuration: TextField<Self._Label>) -> some View {
         configuration
             .textFieldStyle(.plain)
-            .tint(ClashMeowPalette.purple)
+            .tint(ClashMeowPalette.accent)
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .background(ClashMeowPalette.card, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .stroke(
-                        isFocused ? ClashMeowPalette.purple.opacity(0.72) : ClashMeowPalette.faintLine,
+                        isFocused ? ClashMeowPalette.accent.opacity(0.72) : ClashMeowPalette.faintLine,
                         lineWidth: 1
                     )
             }
@@ -1324,7 +1324,7 @@ private struct RuleEditorView: View {
 
             Toggle("直接输入规则", isOn: $useRawInput)
                 .toggleStyle(.switch)
-                .tint(ClashMeowPalette.purple)
+                .tint(ClashMeowPalette.accent)
 
             if useRawInput {
                 TextField("DOMAIN-SUFFIX,example.com,DIRECT", text: $rawRule)
@@ -1342,7 +1342,7 @@ private struct RuleEditorView: View {
                             RuleOptionButton(
                                 title: type,
                                 isSelected: trimmedType == type,
-                                color: ClashMeowPalette.purple
+                                color: ClashMeowPalette.accent
                             ) {
                                 typeText = type
                             }
@@ -1370,7 +1370,7 @@ private struct RuleEditorView: View {
                                 RuleOptionButton(
                                     title: option,
                                     isSelected: proxy == option,
-                                    color: ClashMeowPalette.purple
+                                    color: ClashMeowPalette.accent
                                 ) {
                                     proxy = option
                                 }
@@ -1399,7 +1399,7 @@ private struct RuleEditorView: View {
                     submit()
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(ClashMeowPalette.purple)
+                .tint(ClashMeowPalette.accent)
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canSubmit)
             }
@@ -1440,14 +1440,14 @@ private struct RuleTextFieldStyle: TextFieldStyle {
     func _body(configuration: TextField<Self._Label>) -> some View {
         configuration
             .textFieldStyle(.plain)
-            .tint(ClashMeowPalette.purple)
+            .tint(ClashMeowPalette.accent)
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .background(ClashMeowPalette.card, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .stroke(
-                        isFocused ? ClashMeowPalette.purple.opacity(0.72) : ClashMeowPalette.faintLine,
+                        isFocused ? ClashMeowPalette.accent.opacity(0.72) : ClashMeowPalette.faintLine,
                         lineWidth: 1
                     )
             }
@@ -1627,7 +1627,7 @@ private struct RuleRow: View {
             })
             .labelsHidden()
             .toggleStyle(.switch)
-            .tint(ClashMeowPalette.purple)
+            .tint(ClashMeowPalette.accent)
             .controlSize(.mini)
             .disabled(!isControllerReady)
 
@@ -1663,7 +1663,7 @@ private struct RuleRow: View {
                     .frame(width: 28, height: 28)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(ClashMeowPalette.purple)
+            .foregroundStyle(ClashMeowPalette.accent)
             .help("修改规则")
         }
         .padding(12)
@@ -1713,7 +1713,7 @@ private struct SystemProxyContent: View {
                         title: proxyToggle.title,
                         subtitle: proxyToggle.subtitle,
                         stateText: proxyToggle.isOn ? "已开启" : "已关闭",
-                        stateColor: proxyToggle.isOn ? ClashMeowPalette.purple : ClashMeowPalette.orange,
+                        stateColor: proxyToggle.isOn ? ClashMeowPalette.accent : ClashMeowPalette.orange,
                         isOn: proxyToggle.isOn,
                         actionImage: nil
                     ) { state.setToggle(proxyToggle, isOn: $0) }
@@ -1728,7 +1728,7 @@ private struct SystemProxyContent: View {
                         title: allowLanToggle.title,
                         subtitle: allowLanToggle.subtitle,
                         stateText: state.allowLan ? "已开启" : "已关闭",
-                        stateColor: state.allowLan ? ClashMeowPalette.purple : ClashMeowPalette.orange,
+                        stateColor: state.allowLan ? ClashMeowPalette.accent : ClashMeowPalette.orange,
                         isOn: state.allowLan,
                         actionImage: nil
                     ) { state.setToggle(allowLanToggle, isOn: $0) }
@@ -1763,7 +1763,7 @@ private struct TUNContent: View {
                         title: tunToggle.title,
                         subtitle: tunToggle.subtitle,
                         stateText: state.isApplyingTunUpdate ? "应用中" : (state.isTunEnabled ? "已开启" : "已关闭"),
-                        stateColor: state.isTunEnabled ? ClashMeowPalette.purple : ClashMeowPalette.orange,
+                        stateColor: state.isTunEnabled ? ClashMeowPalette.accent : ClashMeowPalette.orange,
                         isOn: state.isTunEnabled,
                         actionImage: nil,
                         isDisabled: state.isApplyingTunUpdate
@@ -1783,7 +1783,7 @@ private struct SettingFactCard: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: image)
-                .foregroundStyle(ClashMeowPalette.purple)
+                .foregroundStyle(ClashMeowPalette.accent)
                 .frame(width: 24)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
@@ -1824,7 +1824,7 @@ private struct DashboardContent: View {
                         title: "系统代理",
                         subtitle: "大多数应用的流量可以通过系统代理设置接管，兼容性和性能更稳定。",
                         stateText: state.systemProxyEnabled ? "已设置" : "未设置",
-                        stateColor: state.systemProxyEnabled ? ClashMeowPalette.purple : ClashMeowPalette.orange,
+                        stateColor: state.systemProxyEnabled ? ClashMeowPalette.accent : ClashMeowPalette.orange,
                         isOn: proxyToggle?.isOn == true,
                         actionImage: nil,
                         onToggle: { isOn in
@@ -1838,7 +1838,7 @@ private struct DashboardContent: View {
                         title: "增强模式",
                         subtitle: "未遵循系统代理的应用可经由 TUN 或规则引擎接管，保持所有流量由 \(AppInfo.displayName) 路由。",
                         stateText: state.isApplyingTunUpdate ? "应用中" : (state.isTunEnabled ? "已启用" : "已禁用"),
-                        stateColor: state.isTunEnabled ? ClashMeowPalette.purple : ClashMeowPalette.orange,
+                        stateColor: state.isTunEnabled ? ClashMeowPalette.accent : ClashMeowPalette.orange,
                         isOn: state.isTunEnabled,
                         actionImage: nil,
                         isDisabled: state.isApplyingTunUpdate,
@@ -1997,7 +1997,7 @@ private struct ProfilesContent: View {
         .background(Color.white, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .stroke(urlFieldFocused ? ClashMeowPalette.purple : ClashMeowPalette.faintLine, lineWidth: urlFieldFocused ? 2 : 1)
+                .stroke(urlFieldFocused ? ClashMeowPalette.accent : ClashMeowPalette.faintLine, lineWidth: urlFieldFocused ? 2 : 1)
         }
     }
 
@@ -2101,10 +2101,10 @@ private struct ProfileDropOverlay: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(ClashMeowPalette.purple.opacity(0.08))
+                .fill(ClashMeowPalette.accent.opacity(0.08))
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(
-                    ClashMeowPalette.purple,
+                    ClashMeowPalette.accent,
                     style: StrokeStyle(lineWidth: 2, dash: [8, 6])
                 )
 
@@ -2114,7 +2114,7 @@ private struct ProfileDropOverlay: View {
                 Text("拖入 YAML 以导入配置")
                     .font(.system(size: 14, weight: .semibold))
             }
-            .foregroundStyle(ClashMeowPalette.purple)
+            .foregroundStyle(ClashMeowPalette.accent)
         }
         .padding(12)
     }
@@ -2179,7 +2179,7 @@ private struct ProfilesListRow: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(profile.name)
                         .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(profile.isCurrent ? ClashMeowPalette.purple : ClashMeowPalette.ink)
+                        .foregroundStyle(profile.isCurrent ? ClashMeowPalette.accent : ClashMeowPalette.ink)
                         .lineLimit(1)
                     Text(profile.sourceDescription)
                         .font(.system(size: 11, weight: .medium))
@@ -2231,7 +2231,7 @@ private struct ProfilesListRow: View {
                     .toggleStyle(.switch)
                     .labelsHidden()
                     .controlSize(.small)
-                    .tint(ClashMeowPalette.purple)
+                    .tint(ClashMeowPalette.accent)
                     .fixedSize()
                     .allowsHitTesting(!profile.isCurrent && !isBusy)
                     .help(profile.isCurrent ? "当前配置" : "使用配置")
@@ -2368,7 +2368,7 @@ private struct ProfileKindBadge: View {
             .padding(.horizontal, 7)
             .frame(height: 22)
             .background(
-                isSelected ? ClashMeowPalette.purple : ClashMeowPalette.page,
+                isSelected ? ClashMeowPalette.accent : ClashMeowPalette.page,
                 in: RoundedRectangle(cornerRadius: 5, style: .continuous)
             )
     }
@@ -2394,7 +2394,7 @@ private struct StatusStrip: View {
         HStack(spacing: 8) {
             Text("网络接管")
                 .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(ClashMeowPalette.purple)
+                .foregroundStyle(ClashMeowPalette.accent)
             Spacer()
             StatusChip(title: "模式", value: state.modeText)
             StatusChip(title: "Controller", value: "\(state.controllerPort)")
@@ -2589,7 +2589,7 @@ private struct CorePowerSwitch: View {
     private var statusColor: Color {
         switch state.core.status {
         case .running:
-            ClashMeowPalette.purple
+            ClashMeowPalette.accent
         case .starting:
             ClashMeowPalette.orange
         case .failed, .missingBinary:
@@ -2615,7 +2615,7 @@ private struct CorePowerSwitch: View {
                 }
             ))
             .toggleStyle(.switch)
-            .tint(ClashMeowPalette.purple)
+            .tint(ClashMeowPalette.accent)
             .labelsHidden()
             .disabled(state.core.status == .starting)
             .help(state.core.status.isHealthy ? "内核总开关：停止内核" : "内核总开关：启动内核")
@@ -2643,7 +2643,7 @@ private struct GradientProgressBar: View {
                 if progress > 0 {
                     Capsule()
                         .fill(LinearGradient(
-                            colors: [ClashMeowPalette.purple, ClashMeowPalette.purple.opacity(0.72)],
+                            colors: [ClashMeowPalette.accent, ClashMeowPalette.accent.opacity(0.72)],
                             startPoint: .leading,
                             endPoint: .trailing
                         ))
@@ -2711,9 +2711,9 @@ private struct RouteModeRow: View {
             HStack(spacing: 12) {
                 Text(label)
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(selected ? ClashMeowPalette.purple : ClashMeowPalette.muted)
+                    .foregroundStyle(selected ? ClashMeowPalette.accent : ClashMeowPalette.muted)
                     .frame(width: 34, height: 26)
-                    .background((selected ? ClashMeowPalette.purple : ClashMeowPalette.muted).opacity(0.09), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .background((selected ? ClashMeowPalette.accent : ClashMeowPalette.muted).opacity(0.09), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
@@ -2727,7 +2727,7 @@ private struct RouteModeRow: View {
                 Spacer()
 
                 Circle()
-                    .fill(selected ? ClashMeowPalette.purple : ClashMeowPalette.faintLine)
+                    .fill(selected ? ClashMeowPalette.accent : ClashMeowPalette.faintLine)
                     .frame(width: 7, height: 7)
             }
             .contentShape(Rectangle())
@@ -2758,7 +2758,7 @@ private struct ProxyNodeCard: View {
                 Button("查看全部", action: openProxies)
                     .buttonStyle(.plain)
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(ClashMeowPalette.purple)
+                    .foregroundStyle(ClashMeowPalette.accent)
             }
 
             VStack(spacing: 16) {
@@ -2793,12 +2793,12 @@ private struct ProxyNodeCard: View {
                                         .lineLimit(1)
                                     Text(item.detailText.isEmpty ? item.node.endpointText : item.detailText)
                                         .font(.system(size: 11, weight: .bold))
-                                        .foregroundStyle(item.isSelected ? ClashMeowPalette.purple : ClashMeowPalette.muted)
+                                        .foregroundStyle(item.isSelected ? ClashMeowPalette.accent : ClashMeowPalette.muted)
                                         .lineLimit(1)
                                 }
                                 Spacer()
                                 Circle()
-                                    .fill(index == 0 ? ClashMeowPalette.purple : ClashMeowPalette.faintLine)
+                                    .fill(index == 0 ? ClashMeowPalette.accent : ClashMeowPalette.faintLine)
                                     .frame(width: 7, height: 7)
                             }
                             .contentShape(Rectangle())
@@ -2835,7 +2835,7 @@ private struct FeatureCard: View {
                     set: { newValue in onToggle(newValue) }
                 ))
                     .toggleStyle(.switch)
-                    .tint(ClashMeowPalette.purple)
+                    .tint(ClashMeowPalette.accent)
                     .labelsHidden()
                     .disabled(isDisabled)
             }
@@ -2914,14 +2914,14 @@ private struct ActivityGrid: View {
                         title: "上传",
                         value: formatByteCount(state.traffic.up),
                         samples: state.uploadSparklineSamples,
-                        accent: ClashMeowPalette.purple
+                        accent: ClashMeowPalette.accent
                     )
                     .frame(maxWidth: .infinity)
                     ThroughputCard(
                         title: "下载",
                         value: formatByteCount(state.traffic.down),
                         samples: state.downloadSparklineSamples,
-                        accent: ClashMeowPalette.purple
+                        accent: ClashMeowPalette.accent
                     )
                     .frame(maxWidth: .infinity)
                 }
@@ -2938,7 +2938,7 @@ private struct ActivityGrid: View {
                             ("设备", "—"),
                             ("DHCP 设备", "—")
                         ],
-                        statusColor: state.core.status.isHealthy ? ClashMeowPalette.purple : ClashMeowPalette.orange,
+                        statusColor: state.core.status.isHealthy ? ClashMeowPalette.accent : ClashMeowPalette.orange,
                         todoDetailTitles: ["设备", "DHCP 设备"]
                     )
                     TotalTrafficCard()
@@ -3233,8 +3233,8 @@ private struct TotalTrafficCard: View {
                 }
             }
             HStack(spacing: 5) {
-                Capsule().fill(ClashMeowPalette.purple.opacity(0.35)).frame(maxWidth: .infinity)
-                Capsule().fill(ClashMeowPalette.purple.opacity(0.35)).frame(maxWidth: .infinity)
+                Capsule().fill(ClashMeowPalette.accent.opacity(0.35)).frame(maxWidth: .infinity)
+                Capsule().fill(ClashMeowPalette.accent.opacity(0.35)).frame(maxWidth: .infinity)
             }
             .frame(height: 9)
         }
@@ -3252,7 +3252,7 @@ private struct TrafficListCard: View {
     private var rows: [(String, String, Color)] {
         guard tabIndex == 0 else { return [] }
         let liveRows = state.activityTrafficRows.prefix(5).map { row in
-            (row.name, formatByteCount(row.bytes), ClashMeowPalette.purple)
+            (row.name, formatByteCount(row.bytes), ClashMeowPalette.accent)
         }
         if !liveRows.isEmpty {
             return Array(liveRows)
@@ -3419,7 +3419,7 @@ private struct BarTimeline: View {
         HStack(alignment: .bottom, spacing: 12) {
             ForEach(Array(bars.enumerated()), id: \.offset) { _, bar in
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(ClashMeowPalette.purple.opacity(displayedSamples.isEmpty ? 0.25 : 1))
+                    .fill(ClashMeowPalette.accent.opacity(displayedSamples.isEmpty ? 0.25 : 1))
                     .frame(width: 5, height: max(3, 44 * bar))
             }
         }
