@@ -2933,10 +2933,7 @@ private struct ProfileSubscriptionUsageBlock: View {
     let isSelected: Bool
 
     private var usageText: String {
-        let used = formatByteCount(subscription.used)
-        guard subscription.total > 0 else { return "\(used) / 未提供总量" }
-        let percent = Int((subscription.progress ?? 0) * 100)
-        return "\(used) / \(formatByteCount(subscription.total)) · \(percent)%"
+        formatSubscriptionUsage(subscription)
     }
 
     private var expireText: String {
@@ -3047,10 +3044,6 @@ private struct NetworkManageCard: View {
         state.currentProfile?.subscriptionUserInfo
     }
 
-    private var usageTitle: String {
-        subscription == nil ? "远程配置用量未提供" : "远程配置用量"
-    }
-
     private var usageDetailText: String {
         guard let subscription else {
             if state.currentProfile?.kind == .local {
@@ -3058,10 +3051,7 @@ private struct NetworkManageCard: View {
             }
             return "远程配置没有返回用量信息"
         }
-        guard subscription.total > 0 else {
-            return "已使用 \(formatByteCount(subscription.used))"
-        }
-        return "已使用 \(formatByteCount(subscription.used))"
+        return formatSubscriptionUsage(subscription)
     }
 
     private var footerText: String {
@@ -3084,22 +3074,17 @@ private struct NetworkManageCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
                 Image(systemName: "archivebox")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: 32, height: 32)
                     .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(state.currentProfileName)
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(DouMeowPalette.ink)
-                        .lineLimit(1)
-                    Text(usageTitle)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(DouMeowPalette.muted)
-                }
+                Text(state.currentProfileName)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(DouMeowPalette.ink)
+                    .lineLimit(1)
 
                 Spacer()
 
@@ -3108,36 +3093,12 @@ private struct NetworkManageCard: View {
 
             if let subscription {
                 VStack(alignment: .leading, spacing: 10) {
-                    HStack(alignment: .lastTextBaseline) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("已使用")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(DouMeowPalette.muted)
-                            Text(formatByteCount(subscription.used))
-                                .font(.system(size: 24, weight: .bold))
-                                .monospacedDigit()
-                                .foregroundStyle(DouMeowPalette.ink)
-                        }
-
-                        Spacer()
-
-                        if subscription.total > 0 {
-                            VStack(alignment: .trailing, spacing: 3) {
-                                Text("\(Int((subscription.progress ?? 0) * 100))%")
-                                    .font(.system(size: 16, weight: .bold))
-                                    .monospacedDigit()
-                                Text("共 \(formatByteCount(subscription.total))")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .monospacedDigit()
-                                    .foregroundStyle(DouMeowPalette.muted)
-                            }
-                        } else {
-                            Text("总量未提供")
-                                .font(.system(size: 11, weight: .medium))
-                                .monospacedDigit()
-                                .foregroundStyle(DouMeowPalette.muted)
-                        }
-                    }
+                    Text(usageDetailText)
+                        .font(.system(size: 12, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(DouMeowPalette.muted)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
 
                     GradientProgressBar(progress: subscription.progress ?? 0, isSelected: true)
                         .accessibilityLabel("远程配置用量")
@@ -4349,4 +4310,11 @@ private func formatByteCount(_ value: Int) -> String {
         return "\(Int(number)) \(units[unitIndex])"
     }
     return String(format: "%.1f %@", number, units[unitIndex])
+}
+
+private func formatSubscriptionUsage(_ subscription: SubscriptionUserInfo) -> String {
+    let used = formatByteCount(subscription.used)
+    guard subscription.total > 0 else { return "\(used) / 未提供总量" }
+    let percent = Int((subscription.progress ?? 0) * 100)
+    return "\(used) / \(formatByteCount(subscription.total)) · \(percent)%"
 }
