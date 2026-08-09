@@ -255,6 +255,7 @@ private struct HealthCheckContent: View {
     @State private var isRefreshing = false
     @State private var controllerCheck = ControllerHealthCheck.notChecked
     @State private var systemProxyCheck = SystemProxyHealthCheck.notChecked
+    @State private var localDNSCheck = LocalDNSHealthCheck.notChecked
     @State private var checkedAt: Date?
     @State private var isShowingNetworkDiagnostics = false
 
@@ -309,11 +310,7 @@ private struct HealthCheckContent: View {
                     unavailableState: .warning
                 )
                 Divider()
-                latencyRow(
-                    title: "DNS 解析",
-                    value: state.internetLatencySnapshot.dnsMs,
-                    unavailableState: .failed
-                )
+                localDNSRow
                 Divider()
                 proxyChainRow
                 Divider()
@@ -490,6 +487,15 @@ private struct HealthCheckContent: View {
         )
     }
 
+    private var localDNSRow: some View {
+        HealthCheckRow(
+            title: "本机 DNS",
+            subtitle: localDNSCheck.subtitle,
+            statusTitle: localDNSCheck.title,
+            state: localDNSCheck.healthState
+        )
+    }
+
     private func latencyRow(
         title: String,
         value: Int?,
@@ -558,7 +564,6 @@ private struct HealthCheckContent: View {
     private func latencyDetail(for title: String) -> String {
         let entryTitle: String = switch title {
         case "默认网关": "路由器"
-        case "DNS 解析": "测试 DNS"
         default: "测试直连策略"
         }
         return state.internetLatencySnapshot.entries.first(where: { $0.title == entryTitle })?.message
@@ -570,19 +575,25 @@ private struct HealthCheckContent: View {
         isRefreshing = true
         controllerCheck = state.core.status.isHealthy ? .checking : .coreStopped
         systemProxyCheck = .checking
+        localDNSCheck = .checking
 
         if DashboardDemoMode.isEnabled {
             controllerCheck = .available(version: state.version?.version)
             systemProxyCheck = state.systemProxyEnabled
                 ? .enabled(service: "Wi-Fi", port: state.systemProxyPort)
                 : .disabled(service: "Wi-Fi")
+            localDNSCheck = .available(
+                LocalDNSSnapshot(summary: "Wi-Fi：223.5.5.5\n系统解析 默认：223.5.5.5", hasNameServers: true)
+            )
         }
 
         async let controllerRefresh: Void = refreshControllerIfNeeded()
         async let systemProxyRefresh: Void = refreshSystemProxyIfNeeded()
+        async let localDNSRefresh: Void = refreshLocalDNSIfNeeded()
         await state.diagnoseInternetLatency()
         _ = await controllerRefresh
         _ = await systemProxyRefresh
+        _ = await localDNSRefresh
         guard !Task.isCancelled else { return }
 
         checkedAt = Date()
@@ -633,6 +644,17 @@ private struct HealthCheckContent: View {
 
         guard !Task.isCancelled else { return }
         systemProxyCheck = result
+    }
+
+    @MainActor
+    private func refreshLocalDNSIfNeeded() async {
+        guard !DashboardDemoMode.isEnabled else { return }
+
+        let snapshot = await Task.detached(priority: .utility) {
+            LocalDNSDiagnostics.current()
+        }.value
+        guard !Task.isCancelled else { return }
+        localDNSCheck = .available(snapshot)
     }
 
     private static let timeFormatter: DateFormatter = {
@@ -759,6 +781,39 @@ private enum SystemProxyHealthCheck: Sendable {
             "\(service) 的代理协议未全部指向 127.0.0.1:\(expectedPort)。"
         case .unavailable:
             "无法读取当前主网络服务的系统代理设置。"
+        }
+    }
+}
+
+private enum LocalDNSHealthCheck: Sendable {
+    case notChecked
+    case checking
+    case available(LocalDNSSnapshot)
+
+    var title: String {
+        switch self {
+        case .notChecked: "未检查"
+        case .checking: "检查中"
+        case .available(let snapshot): snapshot.hasNameServers ? "已读取" : "未找到"
+        }
+    }
+
+    var healthState: HealthCheckState {
+        switch self {
+        case .notChecked: .inactive
+        case .checking: .checking
+        case .available(let snapshot): snapshot.hasNameServers ? .ready : .warning
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .notChecked:
+            "尚未读取当前设备的 DNS resolver。"
+        case .checking:
+            "正在读取网络服务与系统 resolver。"
+        case .available(let snapshot):
+            snapshot.summary
         }
     }
 }

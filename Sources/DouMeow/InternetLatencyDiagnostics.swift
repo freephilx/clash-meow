@@ -254,3 +254,199 @@ enum InternetLatencyDiagnostics {
         return String(data: data, encoding: .utf8) ?? ""
     }
 }
+
+struct LocalDNSSnapshot: Equatable, Sendable {
+    let summary: String
+    let hasNameServers: Bool
+}
+
+private struct LocalDNSResolverInfo {
+    var isScoped: Bool
+    var interfaceName: String?
+    var domains: [String] = []
+    var searchDomains: [String] = []
+    var servers: [String] = []
+
+    func displayLabel(tailscaleInterfaceNames: Set<String>) -> String {
+        let target: String
+        if !domains.isEmpty {
+            target = domains.joined(separator: ", ")
+        } else if !searchDomains.isEmpty {
+            target = "搜索域 \(searchDomains.joined(separator: ", "))"
+        } else {
+            target = "默认"
+        }
+
+        guard isScoped else { return "系统解析 \(target)" }
+        guard let interfaceName else { return "接口 \(target)" }
+        if tailscaleInterfaceNames.contains(interfaceName) {
+            return "Tailscale（\(interfaceName)） \(target)"
+        }
+        return "接口 \(interfaceName) \(target)"
+    }
+}
+
+enum LocalDNSDiagnostics {
+    static func current() -> LocalDNSSnapshot {
+        var summaries: [String] = []
+        var hasNameServers = false
+
+        if let service = try? SystemProxyController().activeNetworkService() {
+            let output = try? runCapture(
+                executable: "/usr/sbin/networksetup",
+                arguments: ["-getdnsservers", service]
+            )
+            let servers = networkServiceDNSServers(from: output ?? "")
+            hasNameServers = !servers.isEmpty
+            summaries.append(
+                servers.isEmpty
+                    ? "\(service)：未设置 DNS"
+                    : "\(service)：\(servers.joined(separator: ", "))"
+            )
+        }
+
+        if let output = try? runCapture(executable: "/usr/sbin/scutil", arguments: ["--dns"]) {
+            let resolverSummaries = resolverSummaries(
+                from: output,
+                tailscaleInterfaceNames: currentTailscaleInterfaceNames()
+            )
+            hasNameServers = hasNameServers || !resolverSummaries.isEmpty
+            summaries.append(contentsOf: resolverSummaries)
+        }
+
+        let uniqueSummaries = summaries.reduce(into: [String]()) { result, summary in
+            guard !result.contains(summary) else { return }
+            result.append(summary)
+        }
+        return LocalDNSSnapshot(
+            summary: uniqueSummaries.isEmpty ? "未找到当前设备的 DNS 信息" : uniqueSummaries.joined(separator: "\n"),
+            hasNameServers: hasNameServers
+        )
+    }
+
+    static func networkServiceDNSServers(from output: String) -> [String] {
+        output
+            .split(whereSeparator: \.isNewline)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter {
+                !$0.isEmpty
+                    && !$0.hasPrefix("There aren't any DNS Servers set on")
+            }
+    }
+
+    static func resolverSummaries(
+        from output: String,
+        tailscaleInterfaceNames: Set<String> = []
+    ) -> [String] {
+        var isScopedSection = false
+        var current: LocalDNSResolverInfo?
+        var resolvers: [LocalDNSResolverInfo] = []
+
+        func finishCurrentResolver() {
+            guard let current else { return }
+            resolvers.append(current)
+        }
+
+        for rawLine in output.components(separatedBy: .newlines) {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            if line == "DNS configuration (for scoped queries)" {
+                finishCurrentResolver()
+                current = nil
+                isScopedSection = true
+                continue
+            }
+            if line.hasPrefix("resolver #") {
+                finishCurrentResolver()
+                current = LocalDNSResolverInfo(isScoped: isScopedSection)
+                continue
+            }
+            guard current != nil else { continue }
+
+            if line.hasPrefix("domain") {
+                if let value = valueAfterColon(in: line) {
+                    current?.domains.append(value)
+                }
+            } else if line.hasPrefix("search domain[") {
+                if let value = valueAfterColon(in: line) {
+                    current?.searchDomains.append(value)
+                }
+            } else if line.hasPrefix("nameserver[") {
+                if let value = valueAfterColon(in: line) {
+                    current?.servers.append(value)
+                }
+            } else if line.hasPrefix("if_index") {
+                current?.interfaceName = parenthesizedValue(in: line)
+            }
+        }
+        finishCurrentResolver()
+
+        var seen = Set<String>()
+        return resolvers.compactMap { resolver in
+            guard !resolver.servers.isEmpty else { return nil }
+            let label = resolver.displayLabel(tailscaleInterfaceNames: tailscaleInterfaceNames)
+            let summary = "\(label)：\(resolver.servers.joined(separator: ", "))"
+            guard seen.insert(summary).inserted else { return nil }
+            return summary
+        }
+    }
+
+    private static func currentTailscaleInterfaceNames() -> Set<String> {
+        guard let output = try? runCapture(executable: "/sbin/ifconfig", arguments: ["-l"]) else {
+            return []
+        }
+        return Set(output.split(whereSeparator: \.isWhitespace).map(String.init).filter { interfaceName in
+            guard interfaceName.hasPrefix("utun"),
+                  let interface = try? runCapture(executable: "/sbin/ifconfig", arguments: [interfaceName]) else {
+                return false
+            }
+            return interface.components(separatedBy: .newlines).contains { rawLine in
+                let fields = rawLine.split(whereSeparator: \.isWhitespace)
+                guard fields.count > 1 else { return false }
+                let kind = fields[0]
+                let address = String(fields[1]).lowercased()
+                return (kind == "inet" && isTailscaleIPv4Address(address))
+                    || (kind == "inet6" && address.hasPrefix("fd7a:115c:a1e0:"))
+            }
+        })
+    }
+
+    private static func isTailscaleIPv4Address(_ address: String) -> Bool {
+        let octets = address.split(separator: ".").compactMap { Int($0) }
+        guard octets.count == 4 else { return false }
+        return octets[0] == 100 && (64...127).contains(octets[1])
+    }
+
+    private static func valueAfterColon(in line: String) -> String? {
+        guard let range = line.range(of: ":") else { return nil }
+        let value = line[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    private static func parenthesizedValue(in line: String) -> String? {
+        guard let start = line.firstIndex(of: "("),
+              let end = line[start...].firstIndex(of: ")") else {
+            return nil
+        }
+        let value = line[line.index(after: start)..<end]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    private static func runCapture(executable: String, arguments: [String]) throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+
+        let outputPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = Pipe()
+        try process.run()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0 else {
+            throw URLError(.cannotConnectToHost)
+        }
+        let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+}
