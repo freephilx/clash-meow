@@ -3,7 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 private enum ClashMeowPalette {
-    static let purple = Color(hex: 0x845CFB)
+    static let purple = Color(hex: 0x00A52A)
     static let orange = Color(hex: 0xFF9E14)
     static let ink = Color(hex: 0x1A1F26)
     static let muted = Color(hex: 0x94A1B3)
