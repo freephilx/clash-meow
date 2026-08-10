@@ -910,6 +910,7 @@ private struct ProxiesContent: View {
     @EnvironmentObject private var state: AppState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var expandedGroups = Set<String>()
+    @State private var delayReferenceDate = Date()
 
     var body: some View {
         PageScaffold(title: "代理") {
@@ -932,6 +933,7 @@ private struct ProxiesContent: View {
                         ForEach(state.visibleProxyGroups) { group in
                             ProxyGroupCard(
                                 group: group,
+                                delayReferenceDate: delayReferenceDate,
                                 isExpanded: isExpanded(group),
                                 onToggle: { toggleExpansion(for: group) }
                             )
@@ -949,6 +951,13 @@ private struct ProxiesContent: View {
         }
         .onChange(of: state.visibleProxyGroups.map(\.id)) {
             expandInitialGroupsIfNeeded()
+        }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                guard !Task.isCancelled else { return }
+                delayReferenceDate = Date()
+            }
         }
     }
 
@@ -977,6 +986,7 @@ private struct ProxyGroupCard: View {
     @EnvironmentObject private var state: AppState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let group: ProxyGroupItem
+    let delayReferenceDate: Date
     let isExpanded: Bool
     let onToggle: () -> Void
 
@@ -1003,7 +1013,7 @@ private struct ProxyGroupCard: View {
                         ProxyCard(
                             group: group,
                             node: node,
-                            isTestingDelay: state.isTestingDelay(groupID: group.id)
+                            delayReferenceDate: delayReferenceDate
                         ) {
                             Task { await state.selectProxy(groupID: group.id, proxyName: node.name) }
                         }
@@ -1097,7 +1107,7 @@ private struct ProxyNodeSelectionDot: View {
 private struct ProxyCard: View {
     let group: ProxyGroupItem
     let node: ProxyGroupNode
-    let isTestingDelay: Bool
+    let delayReferenceDate: Date
     let action: () -> Void
 
     private var isSelected: Bool {
@@ -1105,6 +1115,10 @@ private struct ProxyCard: View {
     }
 
     var body: some View {
+        let delayDescription = ProxyDelayStatusView.accessibilityDescription(
+            for: node.delayStatus,
+            referenceDate: delayReferenceDate
+        )
         Button(action: action) {
             HStack(alignment: .center, spacing: 9) {
                 VStack(alignment: .leading, spacing: 6) {
@@ -1138,29 +1152,13 @@ private struct ProxyCard: View {
             .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain)
-        .help(isSelected ? "当前代理" : "切换到 \(node.displayName)")
+        .help("\(isSelected ? "当前代理" : "切换到 \(node.displayName)")；\(delayDescription)")
         .accessibilityLabel(node.displayName)
-        .accessibilityValue(accessibilityValue)
+        .accessibilityValue(accessibilityValue(delayDescription: delayDescription))
     }
 
     private var proxyTypeText: String {
         node.type?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
-    }
-
-    private var delayDisplayText: String {
-        if isTestingDelay {
-            return "--"
-        }
-        if node.alive == false {
-            return "超时"
-        }
-        guard let delay = node.delay else {
-            return "--"
-        }
-        if delay <= 0 {
-            return "超时"
-        }
-        return "\(delay) ms"
     }
 
     @ViewBuilder
@@ -1170,40 +1168,182 @@ private struct ProxyCard: View {
                 Text(proxyTypeText)
                     .foregroundStyle(DouMeowPalette.muted)
             }
-            if isTestingDelay {
-                ProgressView()
-                    .controlSize(.mini)
-            } else {
-                Text(delayDisplayText)
-                    .foregroundStyle(delayColor)
-            }
+            ProxyDelayStatusView(status: node.delayStatus, referenceDate: delayReferenceDate)
         }
         .font(.system(size: 11, weight: .medium))
         .lineLimit(1)
     }
 
-    private var accessibilityValue: String {
+    private func accessibilityValue(delayDescription: String) -> String {
         var values: [String] = []
         if isSelected { values.append("已选中") }
         if !proxyTypeText.isEmpty { values.append(proxyTypeText) }
-        values.append(isTestingDelay ? "测速中" : delayDisplayText)
+        values.append(delayDescription)
         return values.joined(separator: ", ")
     }
+}
 
-    private var delayColor: Color {
-        if node.alive == false {
-            return DouMeowPalette.orange
+private struct ProxyDelayStatusView: View {
+    let status: ProxyDelayStatus
+    let referenceDate: Date
+
+    var body: some View {
+        let value = presentation
+        Group {
+            if value.isTesting {
+                ProgressView()
+                    .controlSize(.mini)
+                    .frame(width: 72, alignment: .leading)
+            } else {
+                HStack(spacing: 3) {
+                    Image(systemName: "clock")
+                        .opacity(value.showsClock ? 1 : 0)
+                        .frame(width: 11)
+                        .foregroundStyle(DouMeowPalette.muted)
+                        .accessibilityHidden(true)
+                    Text(value.text)
+                        .monospacedDigit()
+                        .foregroundStyle(value.color)
+                }
+                .frame(width: 72, alignment: .leading)
+            }
         }
-        guard let delay = node.delay else {
-            return DouMeowPalette.muted.opacity(0.8)
+        .help(value.help)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(value.accessibilityText)
+    }
+
+    static func accessibilityDescription(for status: ProxyDelayStatus, referenceDate: Date) -> String {
+        presentation(for: status, referenceDate: referenceDate).accessibilityText
+    }
+
+    private var presentation: Presentation {
+        Self.presentation(for: status, referenceDate: referenceDate)
+    }
+
+    private static func presentation(for status: ProxyDelayStatus, referenceDate: Date) -> Presentation {
+        switch status {
+        case .unknown:
+            return Presentation(
+                text: "--",
+                color: DouMeowPalette.muted,
+                showsClock: false,
+                isTesting: false,
+                help: "尚无延迟结果",
+                accessibilityText: "尚无延迟结果"
+            )
+        case .testing(let previous, _):
+            let previousText = previousDescription(previous)
+            return Presentation(
+                text: "",
+                color: DouMeowPalette.muted,
+                showsClock: false,
+                isTesting: true,
+                help: "正在测试延迟\(previousText)",
+                accessibilityText: "正在测试延迟\(previousText)"
+            )
+        case .success(let measurement):
+            return measurementPresentation(measurement, referenceDate: referenceDate, prefix: nil)
+        case .timedOut(let previous, let attempt):
+            let isHistory = attempt.source == .mihomoHistory
+            let help = isHistory
+                ? historyDescription(measuredAt: attempt.measuredAt, referenceDate: referenceDate, result: "超时")
+                : "本次测速超时"
+            return Presentation(
+                text: "超时",
+                color: isHistory ? DouMeowPalette.muted : .red,
+                showsClock: isHistory,
+                isTesting: false,
+                help: "\(help)\(previousDescription(previous))",
+                accessibilityText: "\(help)\(previousDescription(previous))"
+            )
+        case .failed(let previous, _):
+            let help = "本次测速失败\(previousDescription(previous))"
+            return Presentation(
+                text: "失败",
+                color: .red,
+                showsClock: false,
+                isTesting: false,
+                help: help,
+                accessibilityText: help
+            )
+        case .cancelled(let previous):
+            guard let previous else {
+                return Presentation(
+                    text: "--",
+                    color: DouMeowPalette.muted,
+                    showsClock: false,
+                    isTesting: false,
+                    help: "测速已取消，尚无上次结果",
+                    accessibilityText: "测速已取消，尚无上次结果"
+                )
+            }
+            return measurementPresentation(previous, referenceDate: referenceDate, prefix: "测速已取消；")
         }
-        if delay <= 0 {
-            return DouMeowPalette.orange
+    }
+
+    private static func measurementPresentation(
+        _ measurement: ProxyDelayMeasurement,
+        referenceDate: Date,
+        prefix: String?
+    ) -> Presentation {
+        let isStale = measurement.isStale(at: referenceDate)
+        let isHistory = measurement.source == .mihomoHistory
+        let help: String
+        if isHistory {
+            help = historyDescription(measuredAt: measurement.measuredAt, referenceDate: referenceDate, result: nil)
+        } else if let measuredAt = measurement.measuredAt {
+            help = "本次测速，测于 \(formattedDate(measuredAt))" + (isStale ? "，已超过 30 分钟" : "")
+        } else {
+            help = "本次测速，时间未知"
         }
-        if delay < 300 {
-            return Color(red: 0.18, green: 0.72, blue: 0.38)
-        }
-        return DouMeowPalette.orange
+        let fullHelp = "\(prefix ?? "")\(help)"
+        return Presentation(
+            text: "\(measurement.milliseconds) ms",
+            color: isStale ? DouMeowPalette.muted : delayColor(measurement.milliseconds),
+            showsClock: isHistory || isStale,
+            isTesting: false,
+            help: fullHelp,
+            accessibilityText: "延迟 \(measurement.milliseconds) 毫秒，\(fullHelp)"
+        )
+    }
+
+    private static func historyDescription(
+        measuredAt: Date?,
+        referenceDate: Date,
+        result: String?
+    ) -> String {
+        let resultText = result.map { "，结果\($0)" } ?? ""
+        guard let measuredAt else { return "历史结果\(resultText)，时间未知" }
+        let staleText = referenceDate.timeIntervalSince(measuredAt) > ProxyDelayMeasurement.freshnessInterval
+            ? "，已超过 30 分钟"
+            : ""
+        return "历史结果\(resultText)，测于 \(formattedDate(measuredAt))\(staleText)"
+    }
+
+    private static func previousDescription(_ measurement: ProxyDelayMeasurement?) -> String {
+        guard let measurement else { return "" }
+        let time = measurement.measuredAt.map { "，测于 \(formattedDate($0))" } ?? "，时间未知"
+        return "；上次结果 \(measurement.milliseconds) 毫秒\(time)"
+    }
+
+    private static func formattedDate(_ date: Date) -> String {
+        date.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private static func delayColor(_ delay: Int) -> Color {
+        if delay < 200 { return .green }
+        if delay < 500 { return DouMeowPalette.orange }
+        return .red
+    }
+
+    private struct Presentation {
+        let text: String
+        let color: Color
+        let showsClock: Bool
+        let isTesting: Bool
+        let help: String
+        let accessibilityText: String
     }
 }
 

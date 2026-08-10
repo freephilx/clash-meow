@@ -14,6 +14,7 @@ private final class MockMihomoStore: @unchecked Sendable {
     var reloadConfigShouldFail = false
     var versionFailureCount = 0
     var groupDelayShouldFail = false
+    var groupDelayFailureStatusCode: Int?
     var proxyDelayResults: [String: Int] = [:]
     var disabledRuleIndexes = Set<Int>()
     var ruleDisableShouldFail = false
@@ -26,6 +27,7 @@ private final class MockMihomoStore: @unchecked Sendable {
         reloadConfigShouldFail: Bool = false,
         versionFailureCount: Int = 0,
         groupDelayShouldFail: Bool = false,
+        groupDelayFailureStatusCode: Int? = nil,
         proxyDelayResults: [String: Int] = [:],
         disabledRuleIndexes: Set<Int> = [],
         ruleDisableShouldFail: Bool = false
@@ -41,6 +43,7 @@ private final class MockMihomoStore: @unchecked Sendable {
             self.reloadConfigShouldFail = reloadConfigShouldFail
             self.versionFailureCount = versionFailureCount
             self.groupDelayShouldFail = groupDelayShouldFail
+            self.groupDelayFailureStatusCode = groupDelayFailureStatusCode
             self.proxyDelayResults = proxyDelayResults
             self.disabledRuleIndexes = disabledRuleIndexes
             self.ruleDisableShouldFail = ruleDisableShouldFail
@@ -104,6 +107,7 @@ private final class MockMihomoStore: @unchecked Sendable {
         reloadConfigShouldFail: Bool,
         versionFailureCount: Int,
         groupDelayShouldFail: Bool,
+        groupDelayFailureStatusCode: Int?,
         proxyDelayResults: [String: Int],
         disabledRuleIndexes: Set<Int>,
         ruleDisableShouldFail: Bool
@@ -120,6 +124,7 @@ private final class MockMihomoStore: @unchecked Sendable {
                 reloadConfigShouldFail,
                 versionFailureCount,
                 groupDelayShouldFail,
+                groupDelayFailureStatusCode,
                 proxyDelayResults,
                 disabledRuleIndexes,
                 ruleDisableShouldFail
@@ -166,6 +171,7 @@ enum MockMihomoURLProtocolSupport {
         reloadConfigShouldFail: Bool = false,
         versionFailureCount: Int = 0,
         groupDelayShouldFail: Bool = false,
+        groupDelayFailureStatusCode: Int? = nil,
         proxyDelayResults: [String: Int] = [:],
         disabledRuleIndexes: Set<Int> = [],
         ruleDisableShouldFail: Bool = false
@@ -178,6 +184,7 @@ enum MockMihomoURLProtocolSupport {
             reloadConfigShouldFail: reloadConfigShouldFail,
             versionFailureCount: versionFailureCount,
             groupDelayShouldFail: groupDelayShouldFail,
+            groupDelayFailureStatusCode: groupDelayFailureStatusCode,
             proxyDelayResults: proxyDelayResults,
             disabledRuleIndexes: disabledRuleIndexes,
             ruleDisableShouldFail: ruleDisableShouldFail
@@ -267,7 +274,13 @@ final class MockMihomoURLProtocol: URLProtocol {
                 return
             }
             if method == "GET", path.contains("/group/"), path.hasSuffix("/delay") {
-                if store.snapshot().groupDelayShouldFail, path.contains("/group/GLOBAL/") {
+                let snapshot = store.snapshot()
+                if let statusCode = snapshot.groupDelayFailureStatusCode,
+                   path.contains("/group/GLOBAL/") {
+                    try respond(statusCode: statusCode, data: Data("group delay unavailable".utf8))
+                    return
+                }
+                if snapshot.groupDelayShouldFail, path.contains("/group/GLOBAL/") {
                     try respond(statusCode: 404, data: Data("group delay unavailable".utf8))
                     return
                 }

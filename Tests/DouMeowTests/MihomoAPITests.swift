@@ -36,10 +36,16 @@ struct MihomoAPITests {
         #expect(map == ["HK-01": 120, "JP-02": 88, "US-03": 0])
     }
 
-    @Test func recommendedGroupDelayTimeoutScalesWithNodeCount() {
-        #expect(MihomoAPI.recommendedGroupDelayTimeoutMs(nodeCount: 1) == 8_000)
-        #expect(MihomoAPI.recommendedGroupDelayTimeoutMs(nodeCount: 55) == 22_000)
-        #expect(MihomoAPI.recommendedGroupDelayTimeoutMs(nodeCount: 200) == 60_000)
+    @Test func recommendedGroupDelayRequestTimeoutScalesWithNodeCount() {
+        #expect(MihomoAPI.recommendedGroupDelayRequestTimeoutSeconds(nodeCount: 1) == 10)
+        #expect(MihomoAPI.recommendedGroupDelayRequestTimeoutSeconds(nodeCount: 55) == 14)
+        #expect(MihomoAPI.recommendedGroupDelayRequestTimeoutSeconds(nodeCount: 200) == 24)
+    }
+
+    @Test func invalidDelayTestURLFallsBackToDefault() {
+        #expect(MihomoAPI.resolvedDelayTestURL("file:///tmp/probe") == "https://www.gstatic.com/generate_204")
+        #expect(MihomoAPI.resolvedDelayTestURL("https://user:password@example.com") == "https://www.gstatic.com/generate_204")
+        #expect(MihomoAPI.resolvedDelayTestURL("https://example.com/generate_204") == "https://example.com/generate_204")
     }
 
     @Test func groupDelayReturnsResultsWhenControllerIsReachable() async throws {

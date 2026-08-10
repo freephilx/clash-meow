@@ -352,10 +352,30 @@ struct ProxyGroupItem: Identifiable, Equatable {
 struct ProxyGroupNode: Identifiable, Equatable {
     let name: String
     let type: String?
-    let delay: Int?
+    let delayStatus: ProxyDelayStatus
     let alive: Bool?
 
     var id: String { name }
+
+    init(name: String, type: String?, delay: Int?, alive: Bool?) {
+        self.init(
+            name: name,
+            type: type,
+            delayStatus: ProxyDelayStatus.legacy(delay: delay, alive: alive),
+            alive: alive
+        )
+    }
+
+    init(name: String, type: String?, delayStatus: ProxyDelayStatus, alive: Bool?) {
+        self.name = name
+        self.type = type
+        self.delayStatus = delayStatus
+        self.alive = alive
+    }
+
+    var delay: Int? {
+        delayStatus.sortingMeasurement?.milliseconds
+    }
 
     var displayName: String {
         YAMLScalarDecoder.decode(name)
@@ -367,12 +387,189 @@ struct ProxyGroupNode: Identifiable, Equatable {
     }
 
     var delayText: String {
-        if alive == false {
+        switch delayStatus {
+        case .unknown, .testing:
+            return "--"
+        case .cancelled:
+            return delay.map { "\($0) ms" } ?? "--"
+        case .success(let measurement):
+            return "\(measurement.milliseconds) ms"
+        case .timedOut:
             return "超时"
+        case .failed:
+            return "失败"
         }
-        guard let delay else { return "--" }
-        if delay <= 0 { return "超时" }
-        return "\(delay) ms"
+    }
+}
+
+enum ProxyDelayMeasurementSource: Equatable, Sendable {
+    case mihomoHistory
+    case currentRun(UUID)
+}
+
+struct ProxyDelayMeasurement: Equatable, Sendable {
+    static let freshnessInterval: TimeInterval = 30 * 60
+    static let unknownRuntimeGeneration = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+
+    let milliseconds: Int
+    let measuredAt: Date?
+    let source: ProxyDelayMeasurementSource
+    let runtimeGeneration: UUID
+    let testTargetID: String?
+
+    func isStale(at referenceDate: Date) -> Bool {
+        guard let measuredAt else { return true }
+        return referenceDate.timeIntervalSince(measuredAt) > Self.freshnessInterval
+    }
+}
+
+struct ProxyDelayAttempt: Equatable, Sendable {
+    let measuredAt: Date?
+    let source: ProxyDelayMeasurementSource
+    let runtimeGeneration: UUID
+    let testTargetID: String?
+}
+
+enum ProxyDelayStatus: Equatable, Sendable {
+    case unknown
+    case testing(previous: ProxyDelayMeasurement?, attempt: ProxyDelayAttempt)
+    case success(ProxyDelayMeasurement)
+    case timedOut(previous: ProxyDelayMeasurement?, attempt: ProxyDelayAttempt)
+    case failed(previous: ProxyDelayMeasurement?, attempt: ProxyDelayAttempt)
+    case cancelled(previous: ProxyDelayMeasurement?)
+
+    var previousSuccessfulMeasurement: ProxyDelayMeasurement? {
+        switch self {
+        case .success(let measurement):
+            return measurement
+        case .testing(let previous, _),
+             .timedOut(let previous, _),
+             .failed(let previous, _),
+             .cancelled(let previous):
+            return previous
+        case .unknown:
+            return nil
+        }
+    }
+
+    var sortingMeasurement: ProxyDelayMeasurement? {
+        switch self {
+        case .success(let measurement):
+            return measurement
+        case .testing(let previous, _), .cancelled(let previous):
+            return previous
+        case .unknown, .timedOut, .failed:
+            return nil
+        }
+    }
+
+    var eventDate: Date? {
+        switch self {
+        case .success(let measurement):
+            return measurement.measuredAt
+        case .testing(_, let attempt),
+             .timedOut(_, let attempt),
+             .failed(_, let attempt):
+            return attempt.measuredAt
+        case .cancelled(let previous):
+            return previous?.measuredAt
+        case .unknown:
+            return nil
+        }
+    }
+
+    var runtimeGeneration: UUID? {
+        switch self {
+        case .success(let measurement):
+            return measurement.runtimeGeneration
+        case .testing(_, let attempt),
+             .timedOut(_, let attempt),
+             .failed(_, let attempt):
+            return attempt.runtimeGeneration
+        case .cancelled(let previous):
+            return previous?.runtimeGeneration
+        case .unknown:
+            return nil
+        }
+    }
+
+    var isCurrentRun: Bool {
+        switch self {
+        case .success(let measurement):
+            if case .currentRun = measurement.source { return true }
+        case .testing(_, let attempt),
+             .timedOut(_, let attempt),
+             .failed(_, let attempt):
+            if case .currentRun = attempt.source { return true }
+        case .cancelled(let previous):
+            if let previous, case .currentRun = previous.source { return true }
+        case .unknown:
+            break
+        }
+        return false
+    }
+
+    func belongsToCurrentRun(runtimeGeneration: UUID, testTargetID: String) -> Bool {
+        switch self {
+        case .success(let measurement):
+            guard case .currentRun = measurement.source else { return false }
+            return measurement.runtimeGeneration == runtimeGeneration
+                && measurement.testTargetID == testTargetID
+        case .testing(_, let attempt),
+             .timedOut(_, let attempt),
+             .failed(_, let attempt):
+            guard case .currentRun = attempt.source else { return false }
+            return attempt.runtimeGeneration == runtimeGeneration
+                && attempt.testTargetID == testTargetID
+        case .cancelled(let previous):
+            guard let previous, case .currentRun = previous.source else { return false }
+            return previous.runtimeGeneration == runtimeGeneration
+                && previous.testTargetID == testTargetID
+        case .unknown:
+            return false
+        }
+    }
+
+    static func history(delay: Int?, measuredAt: Date?, runtimeGeneration: UUID) -> ProxyDelayStatus {
+        guard let delay else { return .unknown }
+        if delay > 0 {
+            return .success(
+                ProxyDelayMeasurement(
+                    milliseconds: delay,
+                    measuredAt: measuredAt,
+                    source: .mihomoHistory,
+                    runtimeGeneration: runtimeGeneration,
+                    testTargetID: nil
+                )
+            )
+        }
+        return .timedOut(
+            previous: nil,
+            attempt: ProxyDelayAttempt(
+                measuredAt: measuredAt,
+                source: .mihomoHistory,
+                runtimeGeneration: runtimeGeneration,
+                testTargetID: nil
+            )
+        )
+    }
+
+    static func legacy(delay: Int?, alive: Bool?) -> ProxyDelayStatus {
+        if let delay {
+            return history(
+                delay: delay,
+                measuredAt: nil,
+                runtimeGeneration: ProxyDelayMeasurement.unknownRuntimeGeneration
+            )
+        }
+        if alive == false {
+            return history(
+                delay: 0,
+                measuredAt: nil,
+                runtimeGeneration: ProxyDelayMeasurement.unknownRuntimeGeneration
+            )
+        }
+        return .unknown
     }
 }
 
@@ -450,8 +647,22 @@ struct ProxyNodeInfo: Equatable, Identifiable {
 }
 
 struct ProxyNodeRuntimeStatus: Equatable {
-    let delay: Int?
+    let delayStatus: ProxyDelayStatus
     let alive: Bool?
+
+    init(delay: Int?, alive: Bool?) {
+        self.delayStatus = ProxyDelayStatus.legacy(delay: delay, alive: alive)
+        self.alive = alive
+    }
+
+    init(delayStatus: ProxyDelayStatus, alive: Bool?) {
+        self.delayStatus = delayStatus
+        self.alive = alive
+    }
+
+    var delay: Int? {
+        delayStatus.sortingMeasurement?.milliseconds
+    }
 }
 
 struct OverviewProxyNode: Equatable, Identifiable {
@@ -485,6 +696,20 @@ struct OverviewProxyNode: Equatable, Identifiable {
 struct ProxyHistory: Codable, Equatable {
     let time: String?
     let delay: Int?
+
+    var measuredAt: Date? {
+        guard let time, !time.isEmpty else { return nil }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let regular = ISO8601DateFormatter()
+        regular.formatOptions = [.withInternetDateTime]
+        let date = fractional.date(from: time) ?? regular.date(from: time)
+        guard let date,
+              Calendar(identifier: .gregorian).component(.year, from: date) >= 2_000 else {
+            return nil
+        }
+        return date
+    }
 }
 
 struct RuleProviderItem: Identifiable, Equatable {

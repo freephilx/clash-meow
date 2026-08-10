@@ -177,4 +177,66 @@ struct MihomoProfileParsingTests {
         #expect(groups.first?.nodes.first?.name == "same-node")
         #expect(groups.first?.nodes.first?.type == "trojan")
     }
+
+    @Test func proxyHistoryPreservesValidMeasurementTimeAndRejectsGoZeroTime() throws {
+        let history = ProxyHistory(time: "2026-08-10T10:30:15.123+08:00", delay: 42)
+        let measuredAt = try #require(history.measuredAt)
+        #expect(Calendar(identifier: .gregorian).component(.year, from: measuredAt) == 2026)
+
+        let zeroTime = ProxyHistory(time: "0001-01-01T00:00:00Z", delay: 42)
+        #expect(zeroTime.measuredAt == nil)
+    }
+
+    @Test @MainActor func runtimeProxyRefreshKeepsNewerCurrentDelayResult() throws {
+        let runtimeGeneration = UUID()
+        let runID = UUID()
+        let testURL = "https://www.gstatic.com/generate_204"
+        let testTargetID = String(UInt(bitPattern: testURL.hashValue), radix: 16)
+        let currentMeasurement = ProxyDelayMeasurement(
+            milliseconds: 42,
+            measuredAt: Date(),
+            source: .currentRun(runID),
+            runtimeGeneration: runtimeGeneration,
+            testTargetID: testTargetID
+        )
+        let response = ProxiesResponse(
+            proxies: [
+                "Proxy": ProxyNode(
+                    name: "Proxy",
+                    type: "Selector",
+                    now: "Node-01",
+                    all: ["Node-01"],
+                    alive: true,
+                    hidden: false,
+                    testURL: testURL,
+                    history: nil
+                ),
+                "Node-01": ProxyNode(
+                    name: "Node-01",
+                    type: "VMess",
+                    now: nil,
+                    all: nil,
+                    alive: true,
+                    hidden: false,
+                    testURL: nil,
+                    history: [ProxyHistory(time: "2026-01-01T00:00:00Z", delay: 120)]
+                )
+            ]
+        )
+
+        let groups = AppState.makeProxyGroups(
+            from: response,
+            delayOverrides: [
+                "Node-01": ProxyNodeRuntimeStatus(
+                    delayStatus: .success(currentMeasurement),
+                    alive: true
+                )
+            ],
+            runtimeGeneration: runtimeGeneration
+        )
+        let node = try #require(groups.first?.nodes.first)
+
+        #expect(node.delay == 42)
+        #expect(node.delayStatus == .success(currentMeasurement))
+    }
 }

@@ -1,7 +1,28 @@
 import Foundation
 
+enum MihomoDelayRequestError: LocalizedError, Equatable {
+    case unsupported
+    case authenticationFailed
+    case httpStatus(Int)
+    case invalidResponse
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupported:
+            "当前 Mihomo 不支持代理组测速 API"
+        case .authenticationFailed:
+            "Mihomo Controller 认证失败"
+        case .httpStatus(let statusCode):
+            "Mihomo Controller 返回 HTTP \(statusCode)"
+        case .invalidResponse:
+            "Mihomo Controller 返回了无法识别的测速结果"
+        }
+    }
+}
+
 struct MihomoAPI {
     static let maximumLogEntryBytes = 1 * 1_024 * 1_024
+    static let maximumControllerResponseBytes = 16 * 1_024 * 1_024
     var baseURL = URL(string: "http://127.0.0.1:9090")!
     var secret = ""
     var urlSession: URLSession = MihomoAPI.makeDefaultSession()
@@ -25,8 +46,8 @@ struct MihomoAPI {
         return URLSession(configuration: configuration)
     }
 
-    static func recommendedGroupDelayTimeoutMs(nodeCount: Int) -> Int {
-        min(60_000, max(8_000, nodeCount * 400))
+    static func recommendedGroupDelayRequestTimeoutSeconds(nodeCount: Int) -> Double {
+        min(30, max(10, 8 + ceil(Double(nodeCount) / 25) * 2))
     }
 
     func version() async throws -> MihomoVersion {
@@ -155,7 +176,17 @@ struct MihomoAPI {
 
     static func resolvedDelayTestURL(_ testURL: String?) -> String {
         let trimmed = testURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? defaultDelayTestURL : trimmed
+        guard !trimmed.isEmpty,
+              trimmed.count <= 2_048,
+              let components = URLComponents(string: trimmed),
+              let scheme = components.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              components.host?.isEmpty == false,
+              components.user == nil,
+              components.password == nil else {
+            return defaultDelayTestURL
+        }
+        return trimmed
     }
 
     func proxyDelay(proxyName: String, testURL: String?, timeoutMs: Int = 5000) async throws -> Int? {
@@ -167,11 +198,16 @@ struct MihomoAPI {
             ]
         )
         let requestTimeout = Double(timeoutMs) / 1000 + 3
-        let object = try await getJSONObject(url, timeout: requestTimeout)
+        let object = try await getDelayJSONObject(url, timeout: requestTimeout)
         return Self.intValue(object["delay"])
     }
 
-    func groupDelay(groupName: String, testURL: String?, timeoutMs: Int = 5000) async throws -> [String: Int] {
+    func groupDelay(
+        groupName: String,
+        testURL: String?,
+        timeoutMs: Int = 5_000,
+        requestTimeoutInterval: Double? = nil
+    ) async throws -> [String: Int] {
         let url = controllerURL(
             pathComponents: ["group", groupName, "delay"],
             queryItems: [
@@ -179,8 +215,8 @@ struct MihomoAPI {
                 URLQueryItem(name: "timeout", value: String(timeoutMs))
             ]
         )
-        let requestTimeout = Double(timeoutMs) / 1000 + 8
-        let object = try await getJSONObject(url, timeout: requestTimeout)
+        let requestTimeout = requestTimeoutInterval ?? (Double(timeoutMs) / 1000 + 8)
+        let object = try await getDelayJSONObject(url, timeout: requestTimeout)
         return Self.parseDelayMap(object)
     }
 
@@ -425,6 +461,42 @@ struct MihomoAPI {
         }
         guard !data.isEmpty else { return [:] }
         return (try JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+    }
+
+    private func getDelayJSONObject(_ url: URL, timeout: Double) async throws -> [String: Any] {
+        var request = URLRequest(url: url)
+        if !secret.isEmpty {
+            request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+        }
+        request.timeoutInterval = timeout
+        let requestToSend = request
+        let (data, response) = try await withTimeout(seconds: timeout) {
+            try await urlSession.data(for: requestToSend)
+        }
+        guard let http = response as? HTTPURLResponse else {
+            throw MihomoDelayRequestError.invalidResponse
+        }
+        let expectedBytes = response.expectedContentLength
+        guard expectedBytes < 0 || expectedBytes <= Int64(Self.maximumControllerResponseBytes),
+              data.count <= Self.maximumControllerResponseBytes else {
+            throw MihomoDelayRequestError.invalidResponse
+        }
+        switch http.statusCode {
+        case 200..<300:
+            break
+        case 404, 405, 501:
+            throw MihomoDelayRequestError.unsupported
+        case 401, 403:
+            throw MihomoDelayRequestError.authenticationFailed
+        default:
+            throw MihomoDelayRequestError.httpStatus(http.statusCode)
+        }
+        guard !data.isEmpty,
+              let root = try? JSONSerialization.jsonObject(with: data),
+              let object = root as? [String: Any] else {
+            throw MihomoDelayRequestError.invalidResponse
+        }
+        return object
     }
 
     static func logEntry(from text: String) -> CoreLogEntry? {

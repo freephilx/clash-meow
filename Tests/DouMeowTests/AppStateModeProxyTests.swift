@@ -948,7 +948,7 @@ struct AppStateModeProxyTests {
         }))
     }
 
-    @Test func testDelayFallsBackToProxyDelayAndKeepsPreviousDelayOnRequestFailure() async throws {
+    @Test func testDelayFallsBackOnlyForUnsupportedGroupAPIAndKeepsOldResultsAsPrevious() async throws {
         MockMihomoURLProtocolSupport.reset(
             groupDelayShouldFail: true,
             proxyDelayResults: [
@@ -971,16 +971,50 @@ struct AppStateModeProxyTests {
         let nodesByName = Dictionary(uniqueKeysWithValues: group.nodes.map { ($0.name, $0) })
         #expect(nodesByName["Tokyo-01"]?.delay == 91)
         #expect(nodesByName["Tokyo-01"]?.alive == true)
-        #expect(nodesByName["Singapore-02"]?.delay == 0)
-        #expect(nodesByName["Singapore-02"]?.alive == false)
-        #expect(nodesByName["Los Angeles-03"]?.delay == 50)
+        #expect(nodesByName["Singapore-02"]?.delay == nil)
+        #expect(nodesByName["Singapore-02"]?.alive == true)
+        if case .timedOut(let previous, _) = nodesByName["Singapore-02"]?.delayStatus {
+            #expect(previous?.milliseconds == 50)
+        } else {
+            Issue.record("Expected Singapore-02 to show the current timeout")
+        }
+        #expect(nodesByName["Los Angeles-03"]?.delay == nil)
         #expect(nodesByName["Los Angeles-03"]?.alive == true)
+        if case .failed(let previous, _) = nodesByName["Los Angeles-03"]?.delayStatus {
+            #expect(previous?.milliseconds == 50)
+        } else {
+            Issue.record("Expected Los Angeles-03 to show the current request failure")
+        }
         #expect(MockMihomoURLProtocolSupport.handledRequests.contains(where: { request in
             request.method == "GET" && request.path.contains("/group/GLOBAL/delay")
         }))
         #expect(MockMihomoURLProtocolSupport.handledRequests.filter { request in
             request.method == "GET" && request.path.contains("/proxies/") && request.path.hasSuffix("/delay")
         }.count == 3)
+    }
+
+    @Test func testDelayDoesNotExpandServerFailureIntoPerNodeRequests() async throws {
+        MockMihomoURLProtocolSupport.reset(groupDelayFailureStatusCode: 500)
+        let session = MihomoAPI.makeMockSession(protocolClass: MockMihomoURLProtocol.self)
+        var api = MihomoAPI(baseURL: URL(string: "http://127.0.0.1:9090")!)
+        api.urlSession = session
+
+        let state = AppState()
+        state.useAPIForTesting(api)
+        state.core.applyDemoPresentation()
+        state.proxyGroups = Self.sampleGroups(selected: "Tokyo-01")
+
+        await state.testDelay(for: state.proxyGroups[0])
+
+        let group = try #require(state.proxyGroups.first(where: { $0.id == "GLOBAL" }))
+        #expect(group.nodes.allSatisfy { node in
+            if case .failed = node.delayStatus { return true }
+            return false
+        })
+        #expect(MockMihomoURLProtocolSupport.handledRequests.filter { request in
+            request.method == "GET" && request.path.contains("/proxies/") && request.path.hasSuffix("/delay")
+        }.isEmpty)
+        #expect(state.toast?.message == "测速失败，请确认内核已连接")
     }
 
     @Test func testDelayWhileCoreStoppedShowsToastWithoutRequest() async throws {

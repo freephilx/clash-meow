@@ -74,6 +74,8 @@ final class AppState: ObservableObject {
     private var logStreamFlushTask: Task<Void, Never>?
     private var pendingMihomoLogEntries: [CoreLogEntry] = []
     private var logStreamGeneration: UInt64 = 0
+    private var proxyRuntimeGeneration = UUID()
+    private var testingDelayRunID: UUID?
     private var modeUpdateTask: Task<Void, Never>?
     private var allowLanUpdateTask: Task<Void, Never>?
     private var systemProxyUpdateTask: Task<Void, Never>?
@@ -162,6 +164,7 @@ final class AppState: ObservableObject {
             .removeDuplicates()
             .sink { [weak self] status in
                 guard let self, !DashboardDemoMode.isEnabled else { return }
+                invalidateProxyRuntime(clearRuntimeData: !status.isHealthy)
                 if status.isHealthy {
                     startPolling()
                 } else {
@@ -262,7 +265,7 @@ final class AppState: ObservableObject {
                 return ProxyGroupNode(
                     name: node.name,
                     type: node.type,
-                    delay: status?.delay,
+                    delayStatus: status?.delayStatus ?? .unknown,
                     alive: status?.alive
                 )
             }
@@ -704,7 +707,10 @@ final class AppState: ObservableObject {
             self.connections = try await connections
             self.traffic = (try? await api.traffic()) ?? self.traffic
             let proxiesResponse = try await proxies
-            let fetchedStatuses = Self.makeProxyNodeStatuses(from: proxiesResponse)
+            let fetchedStatuses = Self.makeProxyNodeStatuses(
+                from: proxiesResponse,
+                runtimeGeneration: proxyRuntimeGeneration
+            )
             self.proxyNodeStatuses = Self.mergedProxyNodeStatuses(
                 existing: self.proxyNodeStatuses,
                 fetched: fetchedStatuses
@@ -712,7 +718,8 @@ final class AppState: ObservableObject {
             self.proxyGroups = Self.makeProxyGroups(
                 from: proxiesResponse,
                 configuredGroups: self.activeProfileProxyGroups,
-                delayOverrides: self.proxyNodeStatuses
+                delayOverrides: self.proxyNodeStatuses,
+                runtimeGeneration: proxyRuntimeGeneration
             )
             if let fetchedRules = try? await rules {
                 self.rules = fetchedRules
@@ -734,7 +741,10 @@ final class AppState: ObservableObject {
             self.config = try await config
             updateAPIEndpoint(from: self.config)
             let proxiesResponse = try await proxies
-            let fetchedStatuses = Self.makeProxyNodeStatuses(from: proxiesResponse)
+            let fetchedStatuses = Self.makeProxyNodeStatuses(
+                from: proxiesResponse,
+                runtimeGeneration: proxyRuntimeGeneration
+            )
             self.proxyNodeStatuses = Self.mergedProxyNodeStatuses(
                 existing: self.proxyNodeStatuses,
                 fetched: fetchedStatuses
@@ -742,7 +752,8 @@ final class AppState: ObservableObject {
             self.proxyGroups = Self.makeProxyGroups(
                 from: proxiesResponse,
                 configuredGroups: self.activeProfileProxyGroups,
-                delayOverrides: self.proxyNodeStatuses
+                delayOverrides: self.proxyNodeStatuses,
+                runtimeGeneration: proxyRuntimeGeneration
             )
         } catch {
             addEvent(source: "Proxy", title: "代理组刷新失败", detail: error.localizedDescription)
@@ -1433,29 +1444,125 @@ final class AppState: ObservableObject {
             return
         }
         guard testingDelayGroupID == nil else { return }
-
-        let seedNodes = Self.resolvedProxyNodes(for: group)
+        let currentGroup = proxyGroups.first(where: { $0.id == group.id }) ?? group
+        let seedNodes = Self.resolvedProxyNodes(for: currentGroup)
         guard !seedNodes.isEmpty else { return }
 
-        testingDelayGroupID = group.id
+        let runID = UUID()
+        let runtimeGeneration = proxyRuntimeGeneration
+        let testURL = MihomoAPI.resolvedDelayTestURL(currentGroup.testURL)
+        let testTargetID = String(UInt(bitPattern: testURL.hashValue), radix: 16)
+        let previousMeasurements = seedNodes.reduce(into: [String: ProxyDelayMeasurement]()) { result, node in
+            if let previous = node.delayStatus.previousSuccessfulMeasurement {
+                result[node.id] = previous
+            }
+        }
+        let testingAttempt = Self.currentDelayAttempt(
+            runID: runID,
+            runtimeGeneration: runtimeGeneration,
+            testTargetID: testTargetID
+        )
+
+        testingDelayRunID = runID
+        testingDelayGroupID = currentGroup.id
         pollTask?.cancel()
         pollTask = nil
         defer {
-            testingDelayGroupID = nil
-            startPolling()
+            if testingDelayRunID == runID {
+                restoreTestingDelayStatuses(
+                    groupID: currentGroup.id,
+                    runID: runID,
+                    runtimeGeneration: runtimeGeneration
+                )
+                testingDelayRunID = nil
+                testingDelayGroupID = nil
+            }
+            if core.status.isHealthy {
+                startPolling()
+            }
         }
 
-        let nodes = await testGroupDelayNodes(for: group, seedNodes: seedNodes)
-        let successCount = nodes.filter { ($0.delay ?? 0) > 0 }.count
-
-        if let index = proxyGroups.firstIndex(where: { $0.id == group.id }) {
-            updateProxyGroup(at: index, nodes: nodes)
-        } else {
-            updateProxyGroupNodes(groupID: group.id, nodes: nodes)
+        let testingStatuses = Dictionary(
+            uniqueKeysWithValues: seedNodes.map { node in
+                (
+                    node.id,
+                    ProxyDelayStatus.testing(
+                        previous: previousMeasurements[node.id],
+                        attempt: testingAttempt
+                    )
+                )
+            }
+        )
+        guard applyDelayStatuses(
+            testingStatuses,
+            groupID: currentGroup.id,
+            runID: runID,
+            runtimeGeneration: runtimeGeneration
+        ) else {
+            return
         }
+
+        let statuses: [String: ProxyDelayStatus]
+        do {
+            statuses = try await testGroupDelayStatuses(
+                for: currentGroup,
+                seedNodes: seedNodes,
+                previousMeasurements: previousMeasurements,
+                testURL: testURL,
+                testTargetID: testTargetID,
+                runID: runID,
+                runtimeGeneration: runtimeGeneration
+            )
+        } catch is CancellationError {
+            return
+        } catch let error as URLError where error.code == .cancelled {
+            return
+        } catch {
+            let failedStatuses = Dictionary(
+                uniqueKeysWithValues: seedNodes.map { node in
+                    (
+                        node.id,
+                        ProxyDelayStatus.failed(
+                            previous: previousMeasurements[node.id],
+                            attempt: Self.currentDelayAttempt(
+                                runID: runID,
+                                runtimeGeneration: runtimeGeneration,
+                                testTargetID: testTargetID
+                            )
+                        )
+                    )
+                }
+            )
+            _ = applyDelayStatuses(
+                failedStatuses,
+                groupID: currentGroup.id,
+                runID: runID,
+                runtimeGeneration: runtimeGeneration
+            )
+            addEvent(source: "Proxy", title: "测速失败", detail: error.localizedDescription)
+            showToast("测速失败，请确认内核已连接")
+            return
+        }
+
+        guard applyDelayStatuses(
+            statuses,
+            groupID: currentGroup.id,
+            runID: runID,
+            runtimeGeneration: runtimeGeneration
+        ) else {
+            return
+        }
+
+        let successCount = statuses.values.filter { status in
+            guard case .success(let measurement) = status,
+                  case .currentRun(let measurementRunID) = measurement.source else {
+                return false
+            }
+            return measurementRunID == runID && measurement.milliseconds > 0
+        }.count
 
         if successCount == 0 {
-            addEvent(source: "Proxy", title: "测速失败", detail: "\(group.name) · 未获取到有效延迟")
+            addEvent(source: "Proxy", title: "测速失败", detail: "\(currentGroup.name) · 未获取到有效延迟")
             showToast("测速失败，请确认内核已连接")
             return
         }
@@ -1463,71 +1570,238 @@ final class AppState: ObservableObject {
         addEvent(
             source: "Proxy",
             title: "测速完成",
-            detail: "\(group.name) · \(successCount)/\(seedNodes.count) 个节点"
+            detail: "\(currentGroup.name) · \(successCount)/\(seedNodes.count) 个节点"
         )
     }
 
-    /// Prefer mihomo batch `/group/{name}/delay`, then fall back to Kumo-style sequential proxy tests.
-    private func testGroupDelayNodes(for group: ProxyGroupItem, seedNodes: [ProxyGroupNode]) async -> [ProxyGroupNode] {
+    private func testGroupDelayStatuses(
+        for group: ProxyGroupItem,
+        seedNodes: [ProxyGroupNode],
+        previousMeasurements: [String: ProxyDelayMeasurement],
+        testURL: String,
+        testTargetID: String,
+        runID: UUID,
+        runtimeGeneration: UUID
+    ) async throws -> [String: ProxyDelayStatus] {
         let apiGroupName = apiProxyGroupName(for: group.id)
-        let testURL = MihomoAPI.resolvedDelayTestURL(group.testURL)
-        let timeoutMs = MihomoAPI.recommendedGroupDelayTimeoutMs(nodeCount: seedNodes.count)
-
-        if let delayMap = try? await api.groupDelay(groupName: apiGroupName, testURL: testURL, timeoutMs: timeoutMs),
-           !delayMap.isEmpty {
-            return seedNodes.map { Self.proxyGroupNode(from: $0, batchDelayMap: delayMap) }
-        }
-
-        addEvent(source: "Proxy", title: "组测速 API 不可用", detail: "回退为逐节点测速")
-
-        var nodes: [ProxyGroupNode] = []
-        for node in seedNodes {
-            let measured = try? await api.proxyDelay(
-                proxyName: node.name,
+        do {
+            let delayMap = try await api.groupDelay(
+                groupName: apiGroupName,
                 testURL: testURL,
-                timeoutMs: MihomoAPI.fallbackProxyDelayTimeoutMs
+                timeoutMs: MihomoAPI.fallbackProxyDelayTimeoutMs,
+                requestTimeoutInterval: MihomoAPI.recommendedGroupDelayRequestTimeoutSeconds(
+                    nodeCount: seedNodes.count
+                )
             )
-            nodes.append(Self.proxyGroupNode(from: node, measuredDelay: measured))
+            return Dictionary(
+                uniqueKeysWithValues: seedNodes.map { node in
+                    let attempt = Self.currentDelayAttempt(
+                        runID: runID,
+                        runtimeGeneration: runtimeGeneration,
+                        testTargetID: testTargetID
+                    )
+                    guard let delay = delayMap[node.name], delay > 0 else {
+                        return (
+                            node.id,
+                            ProxyDelayStatus.timedOut(
+                                previous: previousMeasurements[node.id],
+                                attempt: attempt
+                            )
+                        )
+                    }
+                    return (
+                        node.id,
+                        ProxyDelayStatus.success(
+                            Self.currentDelayMeasurement(
+                                delay: delay,
+                                runID: runID,
+                                runtimeGeneration: runtimeGeneration,
+                                testTargetID: testTargetID
+                            )
+                        )
+                    )
+                }
+            )
+        } catch MihomoDelayRequestError.unsupported {
+            addEvent(source: "Proxy", title: "组测速 API 不可用", detail: "回退为逐节点测速")
+            return try await fallbackDelayStatuses(
+                for: seedNodes,
+                previousMeasurements: previousMeasurements,
+                testURL: testURL,
+                testTargetID: testTargetID,
+                runID: runID,
+                runtimeGeneration: runtimeGeneration
+            )
         }
-        return nodes
     }
 
-    private func updateProxyGroup(at index: Int, nodes: [ProxyGroupNode]) {
-        let group = proxyGroups[index]
-        proxyGroups[index] = ProxyGroupItem(
-            id: group.id,
-            name: group.name,
-            type: group.type,
-            now: group.now,
-            all: group.all,
-            nodes: nodes,
-            aliveCount: nodes.filter { $0.alive != false }.count,
-            testURL: group.testURL
-        )
+    private func fallbackDelayStatuses(
+        for nodes: [ProxyGroupNode],
+        previousMeasurements: [String: ProxyDelayMeasurement],
+        testURL: String,
+        testTargetID: String,
+        runID: UUID,
+        runtimeGeneration: UUID
+    ) async throws -> [String: ProxyDelayStatus] {
+        var statuses: [String: ProxyDelayStatus] = [:]
         for node in nodes {
-            proxyNodeStatuses[node.name] = ProxyNodeRuntimeStatus(delay: node.delay, alive: node.alive)
+            try Task.checkCancellation()
+            guard core.status.isHealthy,
+                  proxyRuntimeGeneration == runtimeGeneration,
+                  testingDelayRunID == runID else {
+                throw CancellationError()
+            }
+            let attempt = Self.currentDelayAttempt(
+                runID: runID,
+                runtimeGeneration: runtimeGeneration,
+                testTargetID: testTargetID
+            )
+            do {
+                let delay = try await api.proxyDelay(
+                    proxyName: node.name,
+                    testURL: testURL,
+                    timeoutMs: MihomoAPI.fallbackProxyDelayTimeoutMs
+                )
+                if let delay, delay > 0 {
+                    statuses[node.id] = .success(
+                        Self.currentDelayMeasurement(
+                            delay: delay,
+                            runID: runID,
+                            runtimeGeneration: runtimeGeneration,
+                            testTargetID: testTargetID
+                        )
+                    )
+                } else {
+                    statuses[node.id] = .timedOut(
+                        previous: previousMeasurements[node.id],
+                        attempt: attempt
+                    )
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch let error as URLError where error.code == .cancelled {
+                throw CancellationError()
+            } catch let error as URLError where error.code == .timedOut {
+                statuses[node.id] = .timedOut(
+                    previous: previousMeasurements[node.id],
+                    attempt: attempt
+                )
+            } catch {
+                statuses[node.id] = .failed(
+                    previous: previousMeasurements[node.id],
+                    attempt: attempt
+                )
+            }
         }
+        return statuses
     }
 
-    private static func proxyGroupNode(from node: ProxyGroupNode, batchDelayMap: [String: Int]) -> ProxyGroupNode {
-        guard let measured = batchDelayMap[node.name] else {
-            return ProxyGroupNode(name: node.name, type: node.type, delay: 0, alive: false)
-        }
-        if measured > 0 {
-            return ProxyGroupNode(name: node.name, type: node.type, delay: measured, alive: true)
-        }
-        return ProxyGroupNode(name: node.name, type: node.type, delay: measured, alive: false)
+    private static func currentDelayAttempt(
+        runID: UUID,
+        runtimeGeneration: UUID,
+        testTargetID: String
+    ) -> ProxyDelayAttempt {
+        ProxyDelayAttempt(
+            measuredAt: Date(),
+            source: .currentRun(runID),
+            runtimeGeneration: runtimeGeneration,
+            testTargetID: testTargetID
+        )
     }
 
-    /// Kumo-style merge: keep the previous delay when a single-node test fails.
-    private static func proxyGroupNode(from node: ProxyGroupNode, measuredDelay: Int?) -> ProxyGroupNode {
-        guard let measured = measuredDelay else {
-            return node
+    private static func currentDelayMeasurement(
+        delay: Int,
+        runID: UUID,
+        runtimeGeneration: UUID,
+        testTargetID: String
+    ) -> ProxyDelayMeasurement {
+        ProxyDelayMeasurement(
+            milliseconds: delay,
+            measuredAt: Date(),
+            source: .currentRun(runID),
+            runtimeGeneration: runtimeGeneration,
+            testTargetID: testTargetID
+        )
+    }
+
+    private func applyDelayStatuses(
+        _ statuses: [String: ProxyDelayStatus],
+        groupID: String,
+        runID: UUID,
+        runtimeGeneration: UUID
+    ) -> Bool {
+        guard core.status.isHealthy,
+              proxyRuntimeGeneration == runtimeGeneration,
+              testingDelayRunID == runID,
+              testingDelayGroupID == groupID else {
+            return false
         }
-        if measured > 0 {
-            return ProxyGroupNode(name: node.name, type: node.type, delay: measured, alive: true)
+        let isRuntimeGroup = proxyGroups.contains(where: { $0.id == groupID })
+        guard let currentGroup = (isRuntimeGroup ? proxyGroups : activeProfileProxyGroups)
+            .first(where: { $0.id == groupID }) else {
+            return false
         }
-        return ProxyGroupNode(name: node.name, type: node.type, delay: measured, alive: false)
+        let nodes = currentGroup.nodes.map { node -> ProxyGroupNode in
+            guard let status = statuses[node.id] else { return node }
+            return ProxyGroupNode(
+                name: node.name,
+                type: node.type,
+                delayStatus: status,
+                alive: node.alive
+            )
+        }
+        let updatedGroup = ProxyGroupItem(
+            id: currentGroup.id,
+            name: currentGroup.name,
+            type: currentGroup.type,
+            now: currentGroup.now,
+            all: currentGroup.all,
+            nodes: nodes,
+            aliveCount: currentGroup.aliveCount,
+            testURL: currentGroup.testURL
+        )
+        if isRuntimeGroup, let index = proxyGroups.firstIndex(where: { $0.id == groupID }) {
+            proxyGroups[index] = updatedGroup
+        } else if let index = activeProfileProxyGroups.firstIndex(where: { $0.id == groupID }) {
+            activeProfileProxyGroups[index] = updatedGroup
+        }
+        for node in nodes {
+            proxyNodeStatuses[node.name] = ProxyNodeRuntimeStatus(
+                delayStatus: node.delayStatus,
+                alive: node.alive
+            )
+        }
+        return true
+    }
+
+    private func restoreTestingDelayStatuses(groupID: String, runID: UUID, runtimeGeneration: UUID) {
+        guard let group = proxyGroups.first(where: { $0.id == groupID })
+            ?? activeProfileProxyGroups.first(where: { $0.id == groupID }) else { return }
+        let statuses = group.nodes.reduce(into: [String: ProxyDelayStatus]()) { result, node in
+            guard case .testing(let previous, let attempt) = node.delayStatus,
+                  case .currentRun(let attemptRunID) = attempt.source,
+                  attemptRunID == runID else {
+                return
+            }
+            result[node.id] = .cancelled(previous: previous)
+        }
+        guard !statuses.isEmpty else { return }
+        _ = applyDelayStatuses(
+            statuses,
+            groupID: groupID,
+            runID: runID,
+            runtimeGeneration: runtimeGeneration
+        )
+    }
+
+    private func invalidateProxyRuntime(clearRuntimeData: Bool = false) {
+        proxyRuntimeGeneration = UUID()
+        testingDelayRunID = nil
+        testingDelayGroupID = nil
+        if clearRuntimeData {
+            proxyGroups = []
+            proxyNodeStatuses = [:]
+        }
     }
 
     private static func resolvedProxyNodes(for group: ProxyGroupItem) -> [ProxyGroupNode] {
@@ -2092,6 +2366,7 @@ final class AppState: ObservableObject {
             toggles[index].isOn = TunPreference.isEnabled
         }
         if resetRuntimeData {
+            invalidateProxyRuntime()
             config = activeProfileConfig
             proxyGroups = []
             proxyNodeStatuses = [:]
@@ -2385,28 +2660,37 @@ final class AppState: ObservableObject {
     static func makeProxyGroups(
         from response: ProxiesResponse,
         configuredGroups: [ProxyGroupItem] = [],
-        delayOverrides: [String: ProxyNodeRuntimeStatus] = [:]
+        delayOverrides: [String: ProxyNodeRuntimeStatus] = [:],
+        runtimeGeneration: UUID = ProxyDelayMeasurement.unknownRuntimeGeneration
     ) -> [ProxyGroupItem] {
         let runtimeGroups = response.proxies
             .compactMap { key, node -> ProxyGroupItem? in
                 guard let type = node.type, node.all?.isEmpty == false, node.hidden != true else { return nil }
                 let all = node.all ?? []
+                let testTargetID = String(
+                    UInt(bitPattern: MihomoAPI.resolvedDelayTestURL(node.testURL).hashValue),
+                    radix: 16
+                )
                 let nodes = all.map { nodeName -> ProxyGroupNode in
                     let runtimeNode = response.proxies[nodeName]
                     let override = delayOverrides[nodeName]
-                    let historyDelay = runtimeNode?.history?.last?.delay
-                    let delay = historyDelay ?? override?.delay
-                    let alive: Bool? = {
-                        if let delay {
-                            return delay > 0
-                        }
-                        return runtimeNode?.alive ?? override?.alive
-                    }()
+                    let history = runtimeNode?.history?.last
+                    let historyStatus = ProxyDelayStatus.history(
+                        delay: history?.delay,
+                        measuredAt: history?.measuredAt,
+                        runtimeGeneration: runtimeGeneration
+                    )
+                    let delayStatus = Self.mergedProxyDelayStatus(
+                        existing: override?.delayStatus,
+                        incomingHistory: historyStatus,
+                        runtimeGeneration: runtimeGeneration,
+                        testTargetID: testTargetID
+                    )
                     return ProxyGroupNode(
                         name: nodeName,
                         type: runtimeNode?.type,
-                        delay: delay,
-                        alive: alive
+                        delayStatus: delayStatus,
+                        alive: runtimeNode?.alive ?? override?.alive
                     )
                 }
                 return ProxyGroupItem(
@@ -2449,17 +2733,21 @@ final class AppState: ObservableObject {
         return configuredOrder + appendedGroups
     }
 
-    private static func makeProxyNodeStatuses(from response: ProxiesResponse) -> [String: ProxyNodeRuntimeStatus] {
+    private static func makeProxyNodeStatuses(
+        from response: ProxiesResponse,
+        runtimeGeneration: UUID
+    ) -> [String: ProxyNodeRuntimeStatus] {
         response.proxies.reduce(into: [String: ProxyNodeRuntimeStatus]()) { result, item in
             let name = item.value.name ?? item.key
-            let delay = item.value.history?.last?.delay
-            let alive: Bool? = {
-                if let delay {
-                    return delay > 0
-                }
-                return item.value.alive
-            }()
-            result[name] = ProxyNodeRuntimeStatus(delay: delay, alive: alive)
+            let history = item.value.history?.last
+            result[name] = ProxyNodeRuntimeStatus(
+                delayStatus: ProxyDelayStatus.history(
+                    delay: history?.delay,
+                    measuredAt: history?.measuredAt,
+                    runtimeGeneration: runtimeGeneration
+                ),
+                alive: item.value.alive
+            )
         }
     }
 
@@ -2483,33 +2771,63 @@ final class AppState: ObservableObject {
     ) -> [String: ProxyNodeRuntimeStatus] {
         var merged = fetched
         for (name, status) in existing {
-            guard let delay = status.delay, delay > 0 else { continue }
-            let fetchedDelay = fetched[name]?.delay ?? 0
-            if fetchedDelay <= 0 {
+            guard let incoming = fetched[name] else {
+                merged[name] = status
+                continue
+            }
+            if status.delayStatus.isCurrentRun,
+               status.delayStatus.runtimeGeneration == incoming.delayStatus.runtimeGeneration {
+                guard let incomingDate = incoming.delayStatus.eventDate,
+                      let existingDate = status.delayStatus.eventDate,
+                      incomingDate > existingDate else {
+                    merged[name] = status
+                    continue
+                }
+            } else if case .unknown = incoming.delayStatus,
+                      status.delayStatus.runtimeGeneration == incoming.delayStatus.runtimeGeneration {
                 merged[name] = status
             }
         }
         return merged
     }
 
-    private func updateProxyGroupNodes(groupID: String, nodes: [ProxyGroupNode]) {
-        let updatedGroup = { (group: ProxyGroupItem) -> ProxyGroupItem in
-            guard group.id == groupID else { return group }
-            return ProxyGroupItem(
-                id: group.id,
-                name: group.name,
-                type: group.type,
-                now: group.now,
-                all: group.all,
-                nodes: nodes,
-                aliveCount: nodes.filter { $0.alive != false }.count,
-                testURL: group.testURL
-            )
+    private static func mergedProxyDelayStatus(
+        existing: ProxyDelayStatus?,
+        incomingHistory: ProxyDelayStatus,
+        runtimeGeneration: UUID,
+        testTargetID: String
+    ) -> ProxyDelayStatus {
+        guard let existing else { return incomingHistory }
+
+        if existing.belongsToCurrentRun(
+            runtimeGeneration: runtimeGeneration,
+            testTargetID: testTargetID
+        ) {
+            if case .testing = existing {
+                return existing
+            }
+            guard let incomingDate = incomingHistory.eventDate,
+                  let existingDate = existing.eventDate,
+                  incomingDate > existingDate else {
+                return existing
+            }
+            return incomingHistory
         }
-        proxyGroups = proxyGroups.map(updatedGroup)
-        activeProfileProxyGroups = activeProfileProxyGroups.map(updatedGroup)
-        for node in nodes {
-            proxyNodeStatuses[node.name] = ProxyNodeRuntimeStatus(delay: node.delay, alive: node.alive)
+
+        if existing.isCurrentRun {
+            return incomingHistory
+        }
+        if case .unknown = incomingHistory {
+            return existing
+        }
+
+        switch (existing.eventDate, incomingHistory.eventDate) {
+        case (.some(let oldDate), .some(let newDate)):
+            return newDate > oldDate ? incomingHistory : existing
+        case (.some, .none):
+            return existing
+        case (.none, .none), (.none, .some):
+            return incomingHistory
         }
     }
 
