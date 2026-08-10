@@ -29,12 +29,12 @@
     }
   },
   "geoData": {
-    "version": "meta-rules-dat latest snapshot 2026-08-08",
+    "version": "meta-rules-dat release snapshot 2026-08-10 (82bb4d1e903299a459fa2fb0654baf1c828c88fb)",
     "files": [
       {
         "name": "geoip.metadb",
-        "url": "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb",
-        "sha256": "67453e3341b683c1b643d027429b1eee24f1627e88874e1888febcc082793289"
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/82bb4d1e903299a459fa2fb0654baf1c828c88fb/geoip.metadb",
+        "sha256": "21a293bf18f8184761f13b979f654b927823a8d80652d28ce10b5a95b3243efa"
       }
     ]
   },

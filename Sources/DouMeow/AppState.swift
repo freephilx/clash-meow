@@ -377,6 +377,10 @@ final class AppState: ObservableObject {
         systemProxyApplyForTesting = apply
     }
 
+    internal func waitForSystemProxyUpdateForTesting() async {
+        await systemProxyUpdateTask?.value
+    }
+
     internal func setTunRestartForTesting(_ restart: (() async throws -> Void)?) {
         tunRestartForTesting = restart
     }

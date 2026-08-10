@@ -16,6 +16,8 @@ DouMeow 采用与 DouWork 相同的锁文件、内容寻址缓存和 Xcode 离�
 
 Intel 包使用 Mihomo 的 `amd64-compatible` 制品，以覆盖较早的 Intel CPU。
 更新版本时必须同时更新全部 URL、哈希与版本输出，不能只修改 tag。
+GeoData 必须使用指向具体 commit 的不可变 URL，不能锁定会原地更新的
+`releases/download/latest`，否则远端内容变化会使发布构建无法复现。
 
 ## 准备与缓存
 

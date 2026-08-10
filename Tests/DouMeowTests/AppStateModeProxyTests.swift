@@ -580,7 +580,7 @@ struct AppStateModeProxyTests {
         let state = AppState()
         state.core.applyDemoPresentation()
         state.setSystemProxyApplyForTesting { _ in
-            try await Task.sleep(for: .milliseconds(80))
+            await Task.yield()
         }
 
         state.setSystemProxyEnabled(true)
@@ -591,7 +591,7 @@ struct AppStateModeProxyTests {
         #expect(state.systemProxyEnabled == true)
         #expect(state.toast?.message == "系统代理正在应用，请稍后再试")
 
-        try await Task.sleep(for: .milliseconds(120))
+        await state.waitForSystemProxyUpdateForTesting()
         #expect(state.isApplyingSystemProxyUpdate == false)
         #expect(SystemProxyPreference.isEnabled == true)
         #expect(SystemProxyUserPreference.isEnabled == true)
