@@ -184,14 +184,14 @@ def load_and_validate_lock(path: Path) -> tuple[dict[str, Any], bytes]:
 
 
 def cache_root() -> Path:
-    configured = os.environ.get("DOUMEOW_RUNTIME_CACHE_DIR")
+    configured = os.environ.get("DOUCLASH_RUNTIME_CACHE_DIR")
     if configured:
         return Path(configured).expanduser().resolve()
     return (
         Path.home()
         / "Library"
         / "Caches"
-        / "com.dou.meow"
+        / "com.dou.clash"
         / "vendor"
         / "mihomo"
     )
@@ -332,7 +332,7 @@ def prepare_common(lock: dict[str, Any], lock_digest: str, offline: bool) -> Pat
                 shutil.copy2(source, license_root / item["name"])
 
             provenance_lines = [
-                "DouMeow bundled runtime provenance",
+                "DouClash bundled runtime provenance",
                 "",
                 f"Mihomo: {lock['mihomo']['tag']} ({lock['mihomo']['repository']})",
                 f"GeoData: {lock['geoData']['version']}",

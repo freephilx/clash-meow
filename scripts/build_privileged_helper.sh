@@ -3,8 +3,8 @@ set -euo pipefail
 
 ROOT="${SRCROOT}"
 APP_BUNDLE="${BUILT_PRODUCTS_DIR}/${FULL_PRODUCT_NAME}"
-HELPER_ID="com.dou.meow.helper"
-APP_ID="${PRODUCT_BUNDLE_IDENTIFIER:-com.dou.meow}"
+HELPER_ID="com.dou.clash.helper"
+APP_ID="${PRODUCT_BUNDLE_IDENTIFIER:-com.dou.clash}"
 LAUNCH_SERVICES_DIR="${APP_BUNDLE}/Contents/Library/LaunchServices"
 DAEMON_DIR="${APP_BUNDLE}/Contents/Library/LaunchDaemons"
 RESOURCES_DIR="${APP_BUNDLE}/Contents/Resources"
@@ -13,7 +13,7 @@ HELPER_BIN="${LAUNCH_SERVICES_DIR}/${HELPER_ID}"
 HELPER_INFO="${BUILD_DIR}/${HELPER_ID}-Info.plist"
 APP_INFO="${APP_BUNDLE}/Contents/Info.plist"
 SIGN_ID="${EXPANDED_CODE_SIGN_IDENTITY:--}"
-CODE_SIGN_TIMESTAMP_MODE="${DOUMEOW_CODE_SIGN_TIMESTAMP:-timestamp}"
+CODE_SIGN_TIMESTAMP_MODE="${DOUCLASH_CODE_SIGN_TIMESTAMP:-timestamp}"
 REQUESTED_ARCHS="${ARCHS:-arm64 x86_64}"
 HELPER_ARCHS=()
 
@@ -31,14 +31,14 @@ if [[ ${#HELPER_ARCHS[@]} -eq 0 ]]; then
 fi
 
 mkdir -p "${LAUNCH_SERVICES_DIR}" "${DAEMON_DIR}" "${BUILD_DIR}"
-cp "${ROOT}/DouMeowHelper/Info.plist" "${HELPER_INFO}"
-cp "${ROOT}/DouMeowHelper/${HELPER_ID}.plist" "${DAEMON_DIR}/${HELPER_ID}.plist"
+cp "${ROOT}/DouClashHelper/Info.plist" "${HELPER_INFO}"
+cp "${ROOT}/DouClashHelper/${HELPER_ID}.plist" "${DAEMON_DIR}/${HELPER_ID}.plist"
 
 SWIFT_SOURCES=(
-  "${ROOT}/Sources/DouMeow/PrivilegedHelperConstants.swift"
-  "${ROOT}/Sources/DouMeow/HelperXPCProtocol.swift"
-  "${ROOT}/DouMeowHelper/HelperService.swift"
-  "${ROOT}/DouMeowHelper/main.swift"
+  "${ROOT}/Sources/DouClash/PrivilegedHelperConstants.swift"
+  "${ROOT}/Sources/DouClash/HelperXPCProtocol.swift"
+  "${ROOT}/DouClashHelper/HelperService.swift"
+  "${ROOT}/DouClashHelper/main.swift"
 )
 
 build_helper_binary() {

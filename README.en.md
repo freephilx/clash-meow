@@ -1,14 +1,14 @@
-# DouMeow
+# DouClash
 
 <p align="center">
   <a href="README.md">简体中文</a> | <strong>English</strong>
 </p>
 
 <p align="center">
-  <img src="Sources/DouMeow/Resources/Assets.xcassets/AppIcon.appiconset/icon_256.png" alt="DouMeow icon" width="128" height="128">
+  <img src="Sources/DouClash/Resources/Assets.xcassets/AppIcon.appiconset/icon_256.png" alt="DouClash icon" width="128" height="128">
 </p>
 
-DouMeow is a native macOS graphical application for running, managing, and monitoring a local [mihomo](https://github.com/MetaCubeX/mihomo) core.
+DouClash is a native macOS graphical application for running, managing, and monitoring a local [mihomo](https://github.com/MetaCubeX/mihomo) core.
 
 ![Application screenshot](docs/images/app-screenshot.png)
 
@@ -33,7 +33,7 @@ For design research and implementation decisions, see:
 
 ## References and Acknowledgements
 
-Some product behavior, configuration management, logging, and macOS integration decisions in DouMeow were informed by and compared against the following open-source projects:
+Some product behavior, configuration management, logging, and macOS integration decisions in DouClash were informed by and compared against the following open-source projects:
 
 - [mihomo](https://github.com/MetaCubeX/mihomo): the proxy core run and managed by this project.
 - [ClashX.Meta](https://github.com/MetaCubeX/ClashX.Meta): referenced for its macOS menu bar, configuration switching, system proxy, and privileged helper designs.
@@ -44,7 +44,7 @@ Copyright and licenses for these projects belong to their respective owners. "Re
 
 ## License
 
-DouMeow is licensed under the
+DouClash is licensed under the
 [GNU General Public License v3.0 only](LICENSE). Third-party components
 distributed with the project remain subject to their respective licenses; see
 [Third-Party Notices](THIRD_PARTY_NOTICES.md) for details.

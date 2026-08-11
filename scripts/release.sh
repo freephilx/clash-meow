@@ -3,8 +3,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PROJECT="$ROOT/DouMeow.xcodeproj"
-SCHEME="${SCHEME:-DouMeow}"
+PROJECT="$ROOT/DouClash.xcodeproj"
+SCHEME="${SCHEME:-DouClash}"
 CONFIGURATION="${CONFIGURATION:-Release}"
 
 usage() {
@@ -136,8 +136,8 @@ else
 fi
 
 assets=(
-  "$ROOT/dist/release/DouMeow-$version-Apple-Silicon.dmg"
-  "$ROOT/dist/release/DouMeow-$version-Intel.dmg"
+  "$ROOT/dist/release/DouClash-$version-Apple-Silicon.dmg"
+  "$ROOT/dist/release/DouClash-$version-Intel.dmg"
 )
 for asset in "${assets[@]}"; do
   [[ -f "$asset" ]] || fail "release asset not found: $asset"

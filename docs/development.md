@@ -2,13 +2,13 @@
 
 ## 项目结构
 
-DouMeow 以 Xcode 工程作为主要开发入口，Swift Package Manager 作为命令行构建方式保留。
+DouClash 以 Xcode 工程作为主要开发入口，Swift Package Manager 作为命令行构建方式保留。
 
 核心目录：
 
-- `DouMeow.xcodeproj`：macOS GUI 工程。
-- `Sources/DouMeow`：SwiftUI 应用源码。
-- `Sources/DouMeow/Resources`：示例配置、资源和 asset catalog。
+- `DouClash.xcodeproj`：macOS GUI 工程。
+- `Sources/DouClash`：SwiftUI 应用源码。
+- `Sources/DouClash/Resources`：示例配置、资源和 asset catalog。
 - `RuntimeLocks/mihomo.lock.json`：Mihomo、GeoData、源码与许可证制品锁。
 - `scripts/prepare-mihomo-runtime.sh`：下载并校验锁定制品到用户缓存。
 - `scripts/build-release.sh`：构建 Apple Silicon 与 Intel 发布包。
@@ -23,10 +23,10 @@ DouMeow 以 Xcode 工程作为主要开发入口，Swift Package Manager 作为�
 - Xcode 构建阶段不联网，仅从校验后的用户缓存按 `ARCHS` 注入内核。
 - App 只使用包内 `Contents/Resources/Mihomo/<arch>/bin/mihomo`，不回退到
   Homebrew 或系统目录。
-- 使用 `~/.config/dou-meow/runtime/mihomo` 作为工作目录。
-- 使用 `~/.config/dou-meow/runtime/mihomo/config.yaml` 作为默认配置文件。
+- 使用 `~/.config/dou-clash/runtime/mihomo` 作为工作目录。
+- 使用 `~/.config/dou-clash/runtime/mihomo/config.yaml` 作为默认配置文件。
 - 每次启动内核前执行 `mihomo -t -d <工作目录> -f <运行配置>`。
-- App bundle 运行时通过 `com.dou.meow.helper` 以 root 启动 mihomo；SwiftPM 或非 app bundle 调试环境保留普通子进程启动路径。
+- App bundle 运行时通过 `com.dou.clash.helper` 以 root 启动 mihomo；SwiftPM 或非 app bundle 调试环境保留普通子进程启动路径。
 - 通过 `127.0.0.1:9090` 的 `external-controller` 读取和修改运行状态。
 
 持久化路径和规则见 [持久化](持久化.md)。
@@ -52,10 +52,10 @@ make setup
 打开工程：
 
 ```bash
-open DouMeow.xcodeproj
+open DouClash.xcodeproj
 ```
 
-选择 `DouMeow` scheme，目标选择 `My Mac`，然后运行。
+选择 `DouClash` scheme，目标选择 `My Mac`，然后运行。
 
 首次构建前必须先执行 `make setup` 准备 Mihomo 缓存。Xcode 的
 `Stage Mihomo Runtime` 阶段不会访问网络，缺少缓存时会直接失败并提示准备命令。
@@ -66,7 +66,7 @@ open DouMeow.xcodeproj
 
 ```bash
 ./scripts/prepare-mihomo-runtime.sh
-xcodebuild -project DouMeow.xcodeproj -scheme DouMeow -configuration Debug build
+xcodebuild -project DouClash.xcodeproj -scheme DouClash -configuration Debug build
 ```
 
 SwiftPM 构建：
@@ -83,7 +83,7 @@ swift build
 tmpdir="$(mktemp -d)"
 ./scripts/stage-mihomo-runtime.sh "$tmpdir/Mihomo"
 "$tmpdir/Mihomo/$(uname -m)/bin/mihomo" -t -d "$tmpdir" \
-  -f Sources/DouMeow/Resources/sampleConfig.yaml
+  -f Sources/DouClash/Resources/sampleConfig.yaml
 ```
 
 ## 本地打包
@@ -95,7 +95,7 @@ tmpdir="$(mktemp -d)"
 产物路径：
 
 ```text
-dist/DouMeow.app
+dist/DouClash.app
 ```
 
 该脚本使用 SwiftPM 快速组装本地 App，不包含 Xcode 工程构建的
@@ -120,10 +120,10 @@ make setup
 产物路径：
 
 ```text
-dist/release/DouMeow-0.1.0-Apple-Silicon.dmg
-dist/release/DouMeow-0.1.0-Apple-Silicon.dmg.sha256
-dist/release/DouMeow-0.1.0-Intel.dmg
-dist/release/DouMeow-0.1.0-Intel.dmg.sha256
+dist/release/DouClash-0.1.0-Apple-Silicon.dmg
+dist/release/DouClash-0.1.0-Apple-Silicon.dmg.sha256
+dist/release/DouClash-0.1.0-Intel.dmg
+dist/release/DouClash-0.1.0-Intel.dmg.sha256
 ```
 
 可以通过 `BUILD_NUMBER` 设置 `CFBundleVersion`：
@@ -232,6 +232,6 @@ git push origin v0.2.0
 
 ## 生产化说明
 
-TUN 模式、系统代理修改、端口释放等能力在 macOS 上可能需要授权。当前应用已经集成 `com.dou.meow.helper` privileged helper：启动时必须校验并安装 helper；App bundle 下 mihomo 的启动、停止和重启统一由 helper 以 root 托管；普通权限无法释放端口时也由 helper 处理端口释放。
+TUN 模式、系统代理修改、端口释放等能力在 macOS 上可能需要授权。当前应用已经集成 `com.dou.clash.helper` privileged helper：启动时必须校验并安装 helper；App bundle 下 mihomo 的启动、停止和重启统一由 helper 以 root 托管；普通权限无法释放端口时也由 helper 处理端口释放。
 
 本地 `Sign to Run Locally` 构建使用 identifier-only 的 helper 授权要求，便于开发机反复编译和安装。正式签名发布时，应使用稳定 Developer ID，并把 app/helper 的授权 requirement 收紧到对应的 designated requirement。

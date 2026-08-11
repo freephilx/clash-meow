@@ -1,16 +1,16 @@
-# DouMeow
+# DouClash
 
 <p align="center">
   <strong>简体中文</strong> | <a href="README.en.md">English</a>
 </p>
 
 <p align="center">
-  <img src="Sources/DouMeow/Resources/Assets.xcassets/AppIcon.appiconset/icon_256.png" alt="DouMeow 图标" width="128" height="128">
+  <img src="Sources/DouClash/Resources/Assets.xcassets/AppIcon.appiconset/icon_256.png" alt="DouClash 图标" width="128" height="128">
 </p>
 
-DouMeow 是一款原生 macOS mihomo 图形客户端，用于在一个界面中完成内核运行、配置管理、节点选择、连接观测和网络诊断。
+DouClash 是一款原生 macOS mihomo 图形客户端，用于在一个界面中完成内核运行、配置管理、节点选择、连接观测和网络诊断。
 
-![DouMeow 应用截图](docs/images/app-screenshot.png)
+![DouClash 应用截图](docs/images/app-screenshot.png)
 
 ## 核心功能
 
@@ -31,13 +31,13 @@ DouMeow 是一款原生 macOS mihomo 图形客户端，用于在一个界面中�
 仓库目前尚未提供可下载的 GitHub Release。运行前需要准备项目锁定的 mihomo、GeoData 和许可证制品：
 
 ```bash
-git clone https://github.com/freephilx/DouMeow.git
-cd DouMeow
+git clone https://github.com/freephilx/clash-meow.git
+cd clash-meow
 make setup
-open DouMeow.xcodeproj
+open DouClash.xcodeproj
 ```
 
-在 Xcode 中选择 `DouMeow` scheme 和 `My Mac` 运行目标，然后启动应用。首次使用时，可以导入订阅或本地 YAML 配置；启动内核后，再按需开启系统代理或增强模式。
+在 Xcode 中选择 `DouClash` scheme 和 `My Mac` 运行目标，然后启动应用。首次使用时，可以导入订阅或本地 YAML 配置；启动内核后，再按需开启系统代理或增强模式。
 
 命令行构建、测试、打包和发布流程请参阅[开发文档](docs/development.md)。
 
@@ -55,9 +55,9 @@ open DouMeow.xcodeproj
 
 ## 参考与致谢
 
-DouMeow 的部分产品行为、配置管理、日志处理和 macOS 集成方案参考并对照了以下开源项目：
+DouClash 的部分产品行为、配置管理、日志处理和 macOS 集成方案参考并对照了以下开源项目：
 
-- [mihomo](https://github.com/MetaCubeX/mihomo)：DouMeow 运行和管理的代理内核。
+- [mihomo](https://github.com/MetaCubeX/mihomo)：DouClash 运行和管理的代理内核。
 - [ClashX.Meta](https://github.com/MetaCubeX/ClashX.Meta)：参考其 macOS 菜单栏、配置切换、系统代理和 privileged helper 设计。
 - [Kumo](https://github.com/ProjectKumo/KumoApp)：参考其 Profile 模型、受控运行时配置、日志和内核生命周期分层设计。
 - [Clash Party / Mihomo Party](https://github.com/mihomo-party-org/clash-party)：参考其 Profile 切换、运行时配置生成、热重载和失败回滚策略。
@@ -66,7 +66,7 @@ DouMeow 的部分产品行为、配置管理、日志处理和 macOS 集成方�
 
 ## 许可证
 
-DouMeow 以 [GNU General Public License v3.0 only](LICENSE) 授权。
+DouClash 以 [GNU General Public License v3.0 only](LICENSE) 授权。
 项目分发的第三方组件仍遵循各自的许可证，详情见
 [第三方声明](THIRD_PARTY_NOTICES.md)。
 

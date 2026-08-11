@@ -27,13 +27,13 @@ Build/
 dist/
 
 # Mihomo runtime files are staged from the verified local cache during builds.
-Sources/DouMeow/Resources/Mihomo/arm64/
-Sources/DouMeow/Resources/Mihomo/x86_64/
-Sources/DouMeow/Resources/Mihomo/GeoData/
-Sources/DouMeow/Resources/Mihomo/ThirdPartyLicenses/
-Sources/DouMeow/Resources/Mihomo/MANIFEST.json
-Sources/DouMeow/Resources/Mihomo/bin/
-Sources/DouMeow/Resources/Mihomo/VERSION
+Sources/DouClash/Resources/Mihomo/arm64/
+Sources/DouClash/Resources/Mihomo/x86_64/
+Sources/DouClash/Resources/Mihomo/GeoData/
+Sources/DouClash/Resources/Mihomo/ThirdPartyLicenses/
+Sources/DouClash/Resources/Mihomo/MANIFEST.json
+Sources/DouClash/Resources/Mihomo/bin/
+Sources/DouClash/Resources/Mihomo/VERSION
 
 # Logs and local runtime files
 *.log

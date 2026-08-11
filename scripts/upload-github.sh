@@ -67,8 +67,8 @@ else
   version="${tag#v}"
   release_root="$repo_root/dist/release"
   for package_name in \
-    "DouMeow-${version}-Apple-Silicon.dmg" \
-    "DouMeow-${version}-Intel.dmg"; do
+    "DouClash-${version}-Apple-Silicon.dmg" \
+    "DouClash-${version}-Intel.dmg"; do
     dmg="$release_root/$package_name"
     checksum="$dmg.sha256"
     [[ -f "$dmg" ]] || fail "release package not found: $dmg"
@@ -103,7 +103,7 @@ else
   create_args=(
     release create "$tag" "${assets[@]}"
     --repo "$repository"
-    --title "DouMeow ${tag#v}"
+    --title "DouClash ${tag#v}"
   )
   if ! gh api "repos/${repository}/git/ref/tags/${tag}" >/dev/null 2>&1; then
     create_args+=(--target "$release_target")
