@@ -6,14 +6,12 @@ struct RuntimeConfigSettings: Equatable {
     var externalController: String = "127.0.0.1:9090"
     var secret: String = ""
     var mode: MihomoMode = .rule
-    var allowLan: Bool = false
     var logLevel: String = "info"
     var tunEnabled: Bool?
 
     static var current: RuntimeConfigSettings {
         RuntimeConfigSettings(
             mode: MihomoMode(rawValue: AppPreferenceStore.string(\.forwardingMode) ?? "") ?? .rule,
-            allowLan: AppPreferenceStore.bool(\.allowLan, default: false),
             tunEnabled: TunPreference.isEnabled
         )
     }
@@ -221,11 +219,9 @@ enum RuntimeConfigBuilder {
         "redir-port",
         "tproxy-port",
         "mode",
-        "allow-lan",
         "log-level",
         "find-process-mode",
         "tun",
-        "dns",
         "sniffer"
     ]
 
@@ -270,7 +266,6 @@ enum RuntimeConfigBuilder {
             "secret": settings.secret,
             "mixed-port": settings.mixedPort ?? profileConfig.mixedPort ?? 7890,
             "mode": settings.mode.mihomoValue,
-            "allow-lan": settings.allowLan,
             "log-level": settings.logLevel,
             "find-process-mode": "always"
         ]

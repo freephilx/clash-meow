@@ -27,7 +27,6 @@ struct MihomoYAMLSettingsTests {
         let profileYAML = """
         mixed-port: 6666
         external-controller: 0.0.0.0:1111
-        allow-lan: true
         tun:
           enable: false
         proxies: []
@@ -42,7 +41,6 @@ struct MihomoYAMLSettingsTests {
                 externalController: "127.0.0.1:9090",
                 secret: "",
                 mode: .global,
-                allowLan: false,
                 logLevel: "info",
                 tunEnabled: true
             )
@@ -51,10 +49,22 @@ struct MihomoYAMLSettingsTests {
         #expect(runtimeYAML.contains("mixed-port: 7890"))
         #expect(runtimeYAML.contains("external-controller: 127.0.0.1:9090"))
         #expect(runtimeYAML.contains("mode: global"))
-        #expect(runtimeYAML.contains("allow-lan: false"))
         #expect(runtimeYAML.contains("enable: true"))
         #expect(!runtimeYAML.contains("mixed-port: 6666"))
         #expect(!runtimeYAML.contains("0.0.0.0:1111"))
+    }
+
+    @Test func runtimeBuilderPreservesProfileAllowLan() throws {
+        let profileYAML = """
+        allow-lan: true
+        proxies: []
+        rules:
+          - MATCH,DIRECT
+        """
+
+        let runtimeYAML = try RuntimeConfigBuilder.build(profileYAML: profileYAML)
+
+        #expect(runtimeYAML.contains("allow-lan: true"))
     }
 
     @Test func runtimeBuilderInheritsProfileMixedPortWhenAppSettingIsMissing() throws {
@@ -69,6 +79,33 @@ struct MihomoYAMLSettingsTests {
 
         #expect(runtimeYAML.contains("mixed-port: 7891"))
         #expect(!runtimeYAML.contains("mixed-port: 7890"))
+    }
+
+    @Test func runtimeBuilderPreservesProfileDNSConfiguration() throws {
+        let profileYAML = """
+        dns:
+          enable: true
+          listen: 127.0.0.1:1053
+          enhanced-mode: redir-host
+          nameserver:
+            - 114.114.114.114
+            - 223.5.5.5
+        proxies: []
+        rules:
+          - MATCH,DIRECT
+        """
+
+        let runtimeYAML = try RuntimeConfigBuilder.build(
+            profileYAML: profileYAML,
+            settings: RuntimeConfigSettings(tunEnabled: nil)
+        )
+
+        #expect(runtimeYAML.contains("dns:"))
+        #expect(runtimeYAML.contains("enable: true"))
+        #expect(runtimeYAML.contains("listen: 127.0.0.1:1053"))
+        #expect(runtimeYAML.contains("enhanced-mode: redir-host"))
+        #expect(runtimeYAML.contains("114.114.114.114"))
+        #expect(runtimeYAML.contains("223.5.5.5"))
     }
 
     @Test func runtimeBuilderUsesAppManagedFindProcessMode() throws {
